@@ -1,0 +1,40 @@
+{
+    "name": "armin/codex-php",
+    "description": "A small extensible Codex client for PHP.",
+    "type": "library",
+    "version": "0.0.1-dev",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "symfony/ai-anthropic-platform": ">=0.8",
+        "symfony/ai-azure-platform": ">=0.8",
+        "symfony/ai-bundle": ">=0.8",
+        "symfony/ai-chat": ">=0.8",
+        "symfony/ai-gemini-platform": ">=0.8",
+        "symfony/ai-ollama-platform": ">=0.8",
+        "symfony/ai-open-ai-platform": ">=0.8",
+        "symfony/ai-platform": ">=0.8",
+        "symfony/console": "^8.0",
+        "symfony/finder": "^7.0",
+        "symfony/http-client": "^7.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Armin\\CodexPhp\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Armin\\CodexPhp\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "bin": [
+        "bin/codex"
+    ]
+}
