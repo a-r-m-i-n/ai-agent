@@ -2,3 +2,4 @@
 /.codex
 /.phpunit.result.cache
 /vendor
+/auth*.json

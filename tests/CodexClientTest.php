@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Armin\CodexPhp\Tests;
 
+use Armin\CodexPhp\Auth\CodexAuth;
+use Armin\CodexPhp\Auth\CodexAuthTokens;
 use Armin\CodexPhp\CodexClient;
 use Armin\CodexPhp\CodexConfig;
+use Armin\CodexPhp\CodexResponse;
 use Armin\CodexPhp\Exception\ToolNotFound;
+use Armin\CodexPhp\Internal\CodexRuntimeInterface;
 use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolResult;
 use PHPUnit\Framework\TestCase;
@@ -17,12 +21,16 @@ final class CodexClientTest extends TestCase
 
     protected function setUp(): void
     {
+        putenv('CODEX_API_KEY');
+        putenv('CODEX_DEFAULT_MODEL');
         $this->tempDirectory = sys_get_temp_dir() . '/codex-php-tests-' . bin2hex(random_bytes(4));
         mkdir($this->tempDirectory, 0777, true);
     }
 
     protected function tearDown(): void
     {
+        putenv('CODEX_API_KEY');
+        putenv('CODEX_DEFAULT_MODEL');
         $this->removeDirectory($this->tempDirectory);
     }
 
@@ -42,6 +50,18 @@ final class CodexClientTest extends TestCase
         $client = new CodexClient(new CodexConfig());
 
         self::assertSame('test-key', $client->apiKey());
+    }
+
+    public function testApiKeyCanBeResolvedFromAuthObject(): void
+    {
+        $client = new CodexClient(new CodexConfig(auth: new CodexAuth(
+            authMode: 'tokens',
+            apiKey: null,
+            tokens: new CodexAuthTokens('id', 'access', 'refresh', 'account'),
+        )));
+
+        self::assertNull($client->apiKey());
+        self::assertNotNull($client->auth());
     }
 
     public function testMissingApiKeyReturnsNull(): void
@@ -136,6 +156,67 @@ final class CodexClientTest extends TestCase
 
         self::assertTrue($result->isSuccess());
         self::assertSame('TEST', $result->payload()['value']);
+    }
+
+    public function testRequestReturnsStructuredResponse(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
+            {
+                return new CodexResponse(
+                    content: 'hello world',
+                    model: $modelOverride ?? 'openai:gpt-5',
+                    toolCalls: [
+                        ['name' => 'read_file', 'arguments' => ['path' => '/tmp/example.txt']],
+                    ],
+                    metadata: ['provider' => 'openai'],
+                );
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+        $response = $client->request('Say hello');
+
+        self::assertSame('hello world', $response->content());
+        self::assertSame('openai:gpt-5', $response->model());
+        self::assertSame('read_file', $response->toolCalls()[0]['name']);
+        self::assertSame('openai', $response->metadata()['provider']);
+    }
+
+    public function testRequestTextReturnsOnlyContent(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
+            {
+                return new CodexResponse('plain answer', 'openai:gpt-5');
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+
+        self::assertSame('plain answer', $client->requestText('Prompt'));
+    }
+
+    public function testRequestPassesOverridesToRuntime(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public ?string $model = null;
+            public ?string $apiKey = null;
+
+            public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
+            {
+                $this->model = $modelOverride;
+                $this->apiKey = $apiKeyOverride;
+
+                return new CodexResponse('ok', $modelOverride ?? 'default');
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+        $client->request('Prompt', 'openai:gpt-5.1', 'secret');
+
+        self::assertSame('openai:gpt-5.1', $runtime->model);
+        self::assertSame('secret', $runtime->apiKey);
     }
 
     public function testUnknownToolThrows(): void

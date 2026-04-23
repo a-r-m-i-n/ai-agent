@@ -8,10 +8,10 @@ use Symfony\Component\Console\Application;
 
 final class CodexApplicationFactory
 {
-    public static function create(): Application
+    public static function create(?CodexRunCommand $command = null): Application
     {
         $application = new Application('codex');
-        $application->addCommand(new CodexRunCommand());
+        $application->addCommand($command ?? new CodexRunCommand());
         $application->setDefaultCommand('codex', true);
 
         return $application;

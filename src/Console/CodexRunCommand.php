@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Armin\CodexPhp\Console;
 
+use Armin\CodexPhp\Auth\CodexAuthFileLoader;
+use Armin\CodexPhp\CodexClient;
 use Armin\CodexPhp\CodexConfig;
-use Armin\CodexPhp\Exception\MissingApiKey;
 use Armin\CodexPhp\Exception\MissingModel;
+use Armin\CodexPhp\Internal\AuthResolver;
 use JsonException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -20,6 +22,9 @@ final class CodexRunCommand extends Command
 {
     public function __construct(
         private readonly CodexConfig $config = new CodexConfig(),
+        private readonly ?CodexClient $client = null,
+        private readonly CodexAuthFileLoader $authFileLoader = new CodexAuthFileLoader(),
+        private readonly AuthResolver $authResolver = new AuthResolver(),
     ) {
         parent::__construct();
     }
@@ -30,7 +35,8 @@ final class CodexRunCommand extends Command
             ->setDescription('Runs Codex in non-interactive mode.')
             ->addArgument('prompt', InputArgument::REQUIRED, 'The prompt to execute.')
             ->addOption('model', null, InputOption::VALUE_REQUIRED, 'The model to use.')
-            ->addOption('key', null, InputOption::VALUE_REQUIRED, 'The API key to use.');
+            ->addOption('key', null, InputOption::VALUE_REQUIRED, 'The API key to use.')
+            ->addOption('auth-file', null, InputOption::VALUE_REQUIRED, 'Path to an auth.json file.');
     }
 
     /**
@@ -41,41 +47,46 @@ final class CodexRunCommand extends Command
         $prompt = (string) $input->getArgument('prompt');
         $modelOption = $input->getOption('model');
         $keyOption = $input->getOption('key');
+        $authFileOption = $input->getOption('auth-file');
+        $auth = is_string($authFileOption) && $authFileOption !== ''
+            ? $this->authFileLoader->load($authFileOption)
+            : null;
 
-        $model = $this->config->resolveModel(is_string($modelOption) ? $modelOption : null);
-        $apiKey = $this->config->resolveApiKey(is_string($keyOption) ? $keyOption : null);
+        $config = $auth === null
+            ? $this->config
+            : new CodexConfig(
+                apiKey: null,
+                apiKeyEnvVar: $this->config->apiKeyEnvVar(),
+                model: $this->config->model(),
+                modelEnvVar: $this->config->modelEnvVar(),
+                auth: $auth,
+            );
+
+        $model = $config->resolveModel(is_string($modelOption) ? $modelOption : null);
+        $this->authResolver->resolve($config, is_string($keyOption) ? $keyOption : null);
 
         if ($model === null) {
-            throw MissingModel::forEnvVar($this->config->modelEnvVar());
+            throw MissingModel::forEnvVar($config->modelEnvVar());
         }
 
-        if ($apiKey === null) {
-            throw MissingApiKey::forEnvVar($this->config->apiKeyEnvVar());
-        }
-
-        $keySource = is_string($keyOption) && $keyOption !== '' ? 'option' : 'env';
+        $keySource = is_string($keyOption) && $keyOption !== ''
+            ? 'option'
+            : ($auth !== null ? 'auth_file' : 'env');
         $modelSource = is_string($modelOption) && $modelOption !== '' ? 'option' : 'env';
+        $response = ($this->client ?? new CodexClient($config))->request($prompt, $model, is_string($keyOption) ? $keyOption : null);
 
         $payload = [
-            'mode' => 'simulation',
             'prompt' => $prompt,
-            'model' => $model,
+            'model' => $response->model(),
             'model_source' => $modelSource,
             'api_key_source' => $keySource,
-            'api_key_masked' => $this->maskApiKey($apiKey),
+            'content' => $response->content(),
+            'tool_calls' => $response->toolCalls(),
+            'metadata' => $response->metadata(),
         ];
 
         $output->writeln(json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 
         return Command::SUCCESS;
-    }
-
-    private function maskApiKey(string $apiKey): string
-    {
-        if (strlen($apiKey) <= 4) {
-            return str_repeat('*', strlen($apiKey));
-        }
-
-        return substr($apiKey, 0, 2) . str_repeat('*', max(strlen($apiKey) - 4, 1)) . substr($apiKey, -2);
     }
 }

@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Armin\CodexPhp\Tests\Console;
 
+use Armin\CodexPhp\CodexClient;
+use Armin\CodexPhp\CodexResponse;
+use Armin\CodexPhp\Console\CodexRunCommand;
 use Armin\CodexPhp\Console\CodexApplicationFactory;
+use Armin\CodexPhp\Internal\CodexRuntimeInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -13,13 +17,20 @@ final class CodexApplicationFactoryTest extends TestCase
 {
     public function testApplicationRunsCodexCommandAsDefault(): void
     {
-        $application = CodexApplicationFactory::create();
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
+            {
+                return new CodexResponse('Factory test response', $modelOverride ?? 'openai:gpt-5');
+            }
+        };
+
+        $application = CodexApplicationFactory::create(new CodexRunCommand(client: new CodexClient(runtime: $runtime)));
         $application->setAutoExit(false);
         $output = new BufferedOutput();
 
         $exitCode = $application->run(new ArrayInput([
             'prompt' => 'Smoke test',
-            '--model' => 'gpt-5',
+            '--model' => 'openai:gpt-5',
             '--key' => 'test-key',
         ]), $output);
 

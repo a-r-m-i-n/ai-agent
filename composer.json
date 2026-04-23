@@ -6,6 +6,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
+        "symfony/ai-agent": ">=0.8",
         "symfony/ai-anthropic-platform": ">=0.8",
         "symfony/ai-azure-platform": ">=0.8",
         "symfony/ai-bundle": ">=0.8",

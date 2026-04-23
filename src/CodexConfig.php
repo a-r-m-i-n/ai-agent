@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Armin\CodexPhp;
 
+use Armin\CodexPhp\Auth\CodexAuth;
+
 final class CodexConfig
 {
     public function __construct(
@@ -11,11 +13,21 @@ final class CodexConfig
         private readonly string $apiKeyEnvVar = 'CODEX_API_KEY',
         private readonly ?string $model = null,
         private readonly string $modelEnvVar = 'CODEX_DEFAULT_MODEL',
+        private readonly ?CodexAuth $auth = null,
     ) {
+    }
+
+    public function auth(): ?CodexAuth
+    {
+        return $this->auth;
     }
 
     public function apiKey(): ?string
     {
+        if ($this->auth instanceof CodexAuth && $this->auth->authMode() === CodexAuth::MODE_API_KEY) {
+            return $this->auth->credential();
+        }
+
         if ($this->apiKey !== null && $this->apiKey !== '') {
             return $this->apiKey;
         }
@@ -38,6 +50,10 @@ final class CodexConfig
     {
         if ($override !== null && $override !== '') {
             return $override;
+        }
+
+        if ($this->auth instanceof CodexAuth && $this->auth->authMode() === CodexAuth::MODE_API_KEY) {
+            return $this->auth->credential();
         }
 
         return $this->apiKey();
