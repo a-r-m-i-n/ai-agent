@@ -46,6 +46,7 @@ final class CodexClientTest extends TestCase
         self::assertTrue($client->hasTool('read_file'));
         self::assertTrue($client->hasTool('write_file'));
         self::assertTrue($client->hasTool('run_command'));
+        self::assertTrue($client->hasTool('view_image'));
     }
 
     public function testApiKeyIsReadFromEnvironment(): void
@@ -178,6 +179,90 @@ final class CodexClientTest extends TestCase
         self::assertSame('File not found.', $result->payload()['error']);
     }
 
+    public function testViewImageReturnsImageMetadataAndBase64(): void
+    {
+        $client = new CodexClient();
+        $path = $this->tempDirectory . '/pixel.png';
+        file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
+
+        $result = $client->runTool('view_image', ['path' => $path]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame($path, $result->payload()['path']);
+        self::assertSame('image/png', $result->payload()['mime_type']);
+        self::assertSame(1, $result->payload()['width']);
+        self::assertSame(1, $result->payload()['height']);
+        self::assertFalse($result->payload()['was_resized']);
+        self::assertSame(1, $result->payload()['final_width']);
+        self::assertSame(1, $result->payload()['final_height']);
+        self::assertNotSame('', $result->payload()['base64']);
+        self::assertStringStartsWith('data:image/png;base64,', $result->payload()['data_url']);
+    }
+
+    public function testViewImageResolvesRelativePathsAgainstConfiguredWorkingDirectory(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $path = $this->tempDirectory . '/images/pixel.png';
+        mkdir(dirname($path), 0777, true);
+        file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
+
+        $result = $client->runTool('view_image', ['path' => 'images/pixel.png']);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame($path, $result->payload()['path']);
+    }
+
+    public function testViewImageResolvesRelativePathsAgainstCurrentWorkingDirectoryWhenNoConfigExists(): void
+    {
+        $client = new CodexClient();
+        $workingDirectory = $this->tempDirectory . '/cwd';
+        mkdir($workingDirectory, 0777, true);
+        $path = $workingDirectory . '/image.png';
+        file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
+
+        $previousWorkingDirectory = getcwd();
+        chdir($workingDirectory);
+
+        try {
+            $result = $client->runTool('view_image', ['path' => 'image.png']);
+        } finally {
+            if (is_string($previousWorkingDirectory) && $previousWorkingDirectory !== '') {
+                chdir($previousWorkingDirectory);
+            }
+        }
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame($path, $result->payload()['path']);
+    }
+
+    public function testViewImageFailsForMissingFile(): void
+    {
+        $client = new CodexClient();
+
+        $this->expectException(InvalidToolInput::class);
+        $this->expectExceptionMessage('was not found');
+
+        $client->runTool('view_image', ['path' => $this->tempDirectory . '/missing.png']);
+    }
+
+    public function testViewImageResizesLargeImages(): void
+    {
+        if (!class_exists(\Imagick::class) && !function_exists('imagecreatetruecolor')) {
+            $this->markTestSkipped('No supported image extension available.');
+        }
+
+        $client = new CodexClient();
+        $path = $this->tempDirectory . '/large.png';
+        $this->createLargePng($path, 4096, 1024);
+
+        $result = $client->runTool('view_image', ['path' => $path]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertTrue($result->payload()['was_resized']);
+        self::assertSame(2048, $result->payload()['final_width']);
+        self::assertSame(512, $result->payload()['final_height']);
+    }
+
     public function testRunCommandReturnsOutput(): void
     {
         $client = new CodexClient();
@@ -301,6 +386,7 @@ final class CodexClientTest extends TestCase
         self::assertTrue($client->hasTool('read_file'));
         self::assertTrue($client->hasTool('write_file'));
         self::assertTrue($client->hasTool('run_command'));
+        self::assertTrue($client->hasTool('view_image'));
     }
 
     public function testRequestReturnsStructuredResponse(): void
@@ -473,5 +559,24 @@ TEXT, ['http_code' => 200]);
         }
 
         rmdir($directory);
+    }
+
+    private function createLargePng(string $path, int $width, int $height): void
+    {
+        if (class_exists(\Imagick::class)) {
+            $image = new \Imagick();
+            $image->newImage($width, $height, new \ImagickPixel('red'));
+            $image->setImageFormat('png');
+            file_put_contents($path, $image->getImagesBlob());
+
+            return;
+        }
+
+        $image = imagecreatetruecolor($width, $height);
+        self::assertNotFalse($image);
+        $red = imagecolorallocate($image, 255, 0, 0);
+        imagefilledrectangle($image, 0, 0, $width - 1, $height - 1, $red);
+        imagepng($image, $path);
+        imagedestroy($image);
     }
 }

@@ -6,6 +6,7 @@ namespace Armin\CodexPhp\Tool;
 
 use Armin\CodexPhp\Tool\Builtin\ReadFileTool;
 use Armin\CodexPhp\Tool\Builtin\RunCommandTool;
+use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
 use Armin\CodexPhp\Tool\Builtin\WriteFileTool;
 use Armin\CodexPhp\Exception\ToolNotFound;
 
@@ -60,5 +61,6 @@ final class ToolRegistry
         $this->register(new ReadFileTool($workingDirectory));
         $this->register(new WriteFileTool($workingDirectory));
         $this->register(new RunCommandTool($workingDirectory));
+        $this->register(new ViewImageTool($workingDirectory));
     }
 }
