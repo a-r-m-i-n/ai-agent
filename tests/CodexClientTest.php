@@ -455,7 +455,7 @@ final class CodexClientTest extends TestCase
     public function testRequestReturnsStructuredResponse(): void
     {
         $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
             {
                 return new CodexResponse(
                     content: 'hello world',
@@ -465,6 +465,11 @@ final class CodexClientTest extends TestCase
                     ],
                     metadata: ['provider' => 'openai'],
                 );
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
             }
         };
 
@@ -480,9 +485,14 @@ final class CodexClientTest extends TestCase
     public function testRequestTextReturnsOnlyContent(): void
     {
         $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
             {
                 return new CodexResponse('plain answer', 'openai:gpt-5');
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
             }
         };
 
@@ -491,12 +501,107 @@ final class CodexClientTest extends TestCase
         self::assertSame('plain answer', $client->requestText('Prompt'));
     }
 
+    public function testRequestForwardsOptionalResponseClassToRuntime(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public ?string $capturedResponseClass = null;
+
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+            {
+                $this->capturedResponseClass = $responseClass;
+
+                return new CodexResponse('{"ok":true}', 'openai:gpt-5');
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+        $client->request('Prompt', ClientStructuredResponse::class);
+
+        self::assertSame(ClientStructuredResponse::class, $runtime->capturedResponseClass);
+    }
+
+    public function testRequestTextReturnsJsonStringWhenResponseClassIsProvided(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+            {
+                return new CodexResponse('{"message":"hello"}', 'openai:gpt-5');
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+
+        self::assertSame('{"message":"hello"}', $client->requestText('Prompt', ClientStructuredResponse::class));
+    }
+
+    public function testRequestStructuredReturnsDtoFromRuntime(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+            {
+                throw new \BadMethodCallException('not used');
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                return new ClientStructuredResponse('hello');
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+        $response = $client->requestStructured('Prompt', ClientStructuredResponse::class);
+
+        self::assertInstanceOf(ClientStructuredResponse::class, $response);
+        self::assertSame('hello', $response->message);
+    }
+
+    public function testRequestStructuredRejectsInvalidResponseClass(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+            {
+                throw new \BadMethodCallException('not used');
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                if (!class_exists($responseClass)) {
+                    throw new \InvalidArgumentException(sprintf('Structured response class "%s" does not exist.', $responseClass));
+                }
+
+                return new $responseClass();
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('does not exist');
+
+        $client->requestStructured('Prompt', 'Missing\\Dto');
+    }
+
     public function testGetRequestTokensReturnsZeroUsageBeforeAnyRequest(): void
     {
         $client = new CodexClient(runtime: new class implements CodexRuntimeInterface {
-            public function request(string $prompt): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
             {
                 return new CodexResponse($prompt, 'openai:gpt-5');
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
             }
         });
 
@@ -506,7 +611,7 @@ final class CodexClientTest extends TestCase
     public function testGetRequestTokensReturnsUsageFromLastRequest(): void
     {
         $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
             {
                 return new CodexResponse(
                     content: 'hello world',
@@ -523,6 +628,11 @@ final class CodexClientTest extends TestCase
                         ],
                     ],
                 );
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
             }
         };
 
@@ -544,7 +654,7 @@ final class CodexClientTest extends TestCase
     public function testGetRequestTokensAggregatesToolLoopAndGeneratedImageUsage(): void
     {
         $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
             {
                 return new CodexResponse(
                     content: 'final',
@@ -586,6 +696,11 @@ final class CodexClientTest extends TestCase
                     ],
                 );
             }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
+            }
         };
 
         $client = new CodexClient(runtime: $runtime);
@@ -608,7 +723,7 @@ final class CodexClientTest extends TestCase
         $runtime = new class implements CodexRuntimeInterface {
             private int $calls = 0;
 
-            public function request(string $prompt): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
             {
                 ++$this->calls;
 
@@ -625,6 +740,11 @@ final class CodexClientTest extends TestCase
                         ],
                     ],
                 );
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
             }
         };
 
@@ -1030,5 +1150,13 @@ TEXT, ['http_code' => 200]);
         imagefilledrectangle($image, 0, 0, $width - 1, $height - 1, $red);
         imagepng($image, $path);
         imagedestroy($image);
+    }
+}
+
+final readonly class ClientStructuredResponse
+{
+    public function __construct(
+        public string $message = '',
+    ) {
     }
 }

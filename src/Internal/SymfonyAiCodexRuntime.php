@@ -22,6 +22,8 @@ use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\Content\Image;
 use Symfony\AI\Platform\Message\ToolCallMessage;
+use Symfony\AI\Platform\StructuredOutput\ResponseFormatFactory;
+use Symfony\AI\Platform\StructuredOutput\Serializer;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\AI\Platform\Result\ToolCall;
 
@@ -42,7 +44,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
     ) {
     }
 
-    public function request(string $prompt): CodexResponse
+    public function request(string $prompt, ?string $responseClass = null): CodexResponse
     {
         $model = $this->config->model();
 
@@ -80,7 +82,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         );
         $messageBag->add(Message::ofUser(...$messageContents));
         $modelSupportsImageInput = $platform->getModelCatalog()->getModel($resolvedModel->model())->supports(Capability::INPUT_IMAGE);
-        $requestOptions = $this->buildRequestOptions($resolvedModel->provider(), $resolvedAuth);
+        $requestOptions = $this->buildRequestOptions($resolvedModel->provider(), $resolvedAuth, $platform, $resolvedModel->model(), $responseClass);
         $requestOptions['tools'] = $toolbox->getTools();
         $attachedImagesMetadata = array_map(
             static fn (LocalImageAttachment $attachment): array => $attachment->toMetadata(),
@@ -197,6 +199,13 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         );
     }
 
+    public function requestStructured(string $prompt, string $responseClass): object
+    {
+        $response = $this->request($prompt, $responseClass);
+
+        return (new Serializer())->deserialize($response->content(), $responseClass, 'json');
+    }
+
     private function createPlatform(string $provider, ResolvedAuth $auth): PlatformInterface
     {
         if ($auth->mode() === CodexAuth::MODE_TOKENS) {
@@ -213,13 +222,36 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
     /**
      * @return array<string, mixed>
      */
-    private function buildRequestOptions(string $provider, ResolvedAuth $auth): array
+    private function buildRequestOptions(
+        string $provider,
+        ResolvedAuth $auth,
+        PlatformInterface $platform,
+        string $model,
+        ?string $responseClass = null,
+    ): array
     {
+        $options = [];
+
         if ($provider === 'openai' && $auth->mode() === CodexAuth::MODE_TOKENS) {
-            return ['stream' => true];
+            $options['stream'] = true;
         }
 
-        return [];
+        if ($responseClass === null) {
+            return $options;
+        }
+
+        if (!class_exists($responseClass)) {
+            throw new \InvalidArgumentException(sprintf('Structured response class "%s" does not exist.', $responseClass));
+        }
+
+        if (!$platform->getModelCatalog()->getModel($model)->supports(Capability::OUTPUT_STRUCTURED)) {
+            throw new \RuntimeException(sprintf('Model "%s" does not support structured output.', $model));
+        }
+
+        $options['response_format'] = (new ResponseFormatFactory())->create($responseClass);
+        $options['stream'] = false;
+
+        return $options;
     }
 
     private function createSessionStore(): ?CodexSessionStore

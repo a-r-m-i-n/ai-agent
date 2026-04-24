@@ -84,14 +84,27 @@ final class CodexClient
         return $this->toolRegistry->has($name);
     }
 
-    public function request(string $prompt): CodexResponse
+    public function request(string $prompt, ?string $responseClass = null): CodexResponse
     {
-        return $this->lastResponse = $this->runtime->request($prompt);
+        return $this->lastResponse = $this->runtime->request($prompt, $responseClass);
     }
 
-    public function requestText(string $prompt): string
+    public function requestText(string $prompt, ?string $responseClass = null): string
     {
-        return $this->request($prompt)->content();
+        return $this->request($prompt, $responseClass)->content();
+    }
+
+    /**
+     * @template TObject of object
+     *
+     * @param class-string<TObject> $responseClass
+     *
+     * @return TObject
+     */
+    public function requestStructured(string $prompt, string $responseClass): object
+    {
+        /** @var TObject */
+        return $this->runtime->requestStructured($prompt, $responseClass);
     }
 
     /**

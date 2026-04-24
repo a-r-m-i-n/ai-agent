@@ -98,13 +98,18 @@ final class CodexRunCommandTest extends TestCase
             ) {
             }
 
-            public function request(string $prompt): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
             {
                 return new CodexResponse(
                     content: 'Hello from Codex',
                     model: 'openai:gpt-5',
                     metadata: ['session_file_seen' => $this->config->sessionFile()],
                 );
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
             }
         });
 
@@ -235,7 +240,7 @@ final class CodexRunCommandTest extends TestCase
     private function createClientStub(): CodexClient
     {
         $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
             {
                 return new CodexResponse(
                     content: 'Hello from Codex',
@@ -252,6 +257,11 @@ final class CodexRunCommandTest extends TestCase
                         ],
                     ],
                 );
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
             }
         };
 

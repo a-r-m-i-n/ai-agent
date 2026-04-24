@@ -18,9 +18,14 @@ final class CodexApplicationFactoryTest extends TestCase
     public function testApplicationRunsCodexCommandAsDefault(): void
     {
         $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
             {
                 return new CodexResponse('Factory test response', 'openai:gpt-5');
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
             }
         };
 

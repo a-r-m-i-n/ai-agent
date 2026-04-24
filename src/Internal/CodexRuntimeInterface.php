@@ -8,5 +8,7 @@ use Armin\CodexPhp\CodexResponse;
 
 interface CodexRuntimeInterface
 {
-    public function request(string $prompt): CodexResponse;
+    public function request(string $prompt, ?string $responseClass = null): CodexResponse;
+
+    public function requestStructured(string $prompt, string $responseClass): object;
 }

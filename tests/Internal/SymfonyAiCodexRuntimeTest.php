@@ -77,6 +77,86 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         self::assertSame($path, $response->metadata()['attached_images'][0]['path']);
     }
 
+    public function testStructuredRequestAddsResponseFormatAndDisablesStreaming(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_STRUCTURED],
+            $holder,
+        );
+
+        $response = $runtime->request('Return JSON.', RuntimeStructuredResponse::class);
+
+        self::assertSame('ok', $response->content());
+        self::assertFalse($holder->options[0]['stream']);
+        self::assertSame('json_schema', $holder->options[0]['response_format']['type']);
+        self::assertSame('RuntimeStructuredResponse', $holder->options[0]['response_format']['json_schema']['name']);
+        self::assertTrue($holder->options[0]['response_format']['json_schema']['strict']);
+        self::assertArrayHasKey('message', $holder->options[0]['response_format']['json_schema']['schema']['properties']);
+    }
+
+    public function testStructuredRequestStillReturnsJsonTextInCodexResponse(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_STRUCTURED],
+            $holder,
+            results: [
+                new TextResult('{"message":"hello","count":2}'),
+            ],
+        );
+
+        $response = $runtime->request('Return JSON.', RuntimeStructuredResponse::class);
+
+        self::assertSame('{"message":"hello","count":2}', $response->content());
+    }
+
+    public function testRequestStructuredReturnsHydratedDtoObject(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_STRUCTURED],
+            $holder,
+            results: [
+                new TextResult('{"message":"hello","count":2}'),
+            ],
+        );
+
+        $response = $runtime->requestStructured('Return JSON.', RuntimeStructuredResponse::class);
+
+        self::assertInstanceOf(RuntimeStructuredResponse::class, $response);
+        self::assertSame('hello', $response->message);
+        self::assertSame(2, $response->count);
+    }
+
+    public function testStructuredRequestRejectsMissingResponseClass(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_STRUCTURED],
+            $holder,
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('does not exist');
+
+        $runtime->request('Return JSON.', 'Missing\\Dto');
+    }
+
+    public function testStructuredRequestThrowsWhenModelDoesNotSupportIt(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('does not support structured output');
+
+        $runtime->request('Return JSON.', RuntimeStructuredResponse::class);
+    }
+
     public function testMultipleImageReferencesAreDeduplicated(): void
     {
         $path = $this->tempDirectory . '/image.png';
@@ -335,6 +415,46 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         self::assertCount(2, $followUpMessages[4]->getContent());
         self::assertCount(1, $response->metadata()['attached_images']);
         self::assertSame($path, $response->metadata()['attached_images'][0]['path']);
+    }
+
+    public function testStructuredFinalOutputStillWorksWithToolLoopAndSessionReplay(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                ['role' => 'user', 'content' => 'Earlier prompt'],
+                ['role' => 'assistant', 'content' => 'Earlier answer'],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $toolRegistry = new ToolRegistry();
+        $toolRegistry->register($this->createTool('find_files', static fn (): ToolResult => ToolResult::success([
+            'path' => '/tmp',
+            'filter' => '*.json',
+            'count' => 1,
+            'files' => ['/tmp/result.json'],
+        ])));
+
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_STRUCTURED],
+            $holder,
+            sessionFile: $sessionFile,
+            results: [
+                new ToolCallResult([new ToolCall('call-1', 'find_files', ['path' => '/tmp', 'filter' => '*.json'])]),
+                new TextResult('{"message":"done","count":1}'),
+            ],
+            toolRegistry: $toolRegistry,
+        );
+
+        $response = $runtime->requestStructured('Return JSON.', RuntimeStructuredResponse::class);
+
+        self::assertSame('done', $response->message);
+        self::assertCount(2, $holder->inputs);
+        self::assertFalse($holder->options[0]['stream']);
+        self::assertFalse($holder->options[1]['stream']);
+        self::assertSame(6, $holder->inputs[1]->count());
     }
 
     public function testMultipleViewImageToolCallsReuseOriginalPromptForFollowUpMessage(): void
@@ -832,5 +952,14 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
                 return ($this->executor)($input);
             }
         };
+    }
+}
+
+final readonly class RuntimeStructuredResponse
+{
+    public function __construct(
+        public string $message = '',
+        public int $count = 0,
+    ) {
     }
 }

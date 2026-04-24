@@ -109,6 +109,62 @@ $response = $client->request('Summarize this package and mention the built-in to
 echo $response->content();
 ```
 
+You can also constrain the model output to a strict JSON Schema derived from a DTO class.
+When you pass a response class to `request()` or `requestText()`, the final content still stays a JSON string:
+
+```php
+<?php
+
+final readonly class PackageSummary
+{
+    /**
+     * @param list<string> $tools
+     */
+    public function __construct(
+        public string $summary,
+        public array $tools,
+    ) {
+    }
+}
+
+$jsonResponse = $client->request(
+    'Summarize this package as JSON with summary and tools.',
+    PackageSummary::class,
+);
+
+echo $jsonResponse->content();
+```
+
+If you want a hydrated DTO object instead of raw JSON text, use `requestStructured()`:
+
+```php
+<?php
+
+final readonly class PackageSummary
+{
+    /**
+     * @param list<string> $tools
+     */
+    public function __construct(
+        public string $summary,
+        public array $tools,
+    ) {
+    }
+}
+
+$summary = $client->requestStructured(
+    'Summarize this package as JSON with summary and tools.',
+    PackageSummary::class,
+);
+
+echo $summary->summary;
+print_r($summary->tools);
+```
+
+Structured output currently supports DTO classes only.
+If the class does not exist, the request fails fast.
+If the selected model does not support Symfony AI `Capability::OUTPUT_STRUCTURED`, the runtime throws a clear exception instead of silently falling back to plain text.
+
 Image generation also goes through the same `request()` API. If the model decides to create a new image, it uses the internal `generate_image` tool, stores the file locally, and still returns a normal text response:
 
 ```php
