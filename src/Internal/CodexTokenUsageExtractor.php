@@ -18,8 +18,15 @@ final class CodexTokenUsageExtractor
     public function fromSession(CodexSession $session): CodexTokenUsage
     {
         $usage = new CodexTokenUsage();
+        $assistantMessagesSinceLastUser = 0;
 
         foreach ($session->messages() as $message) {
+            if (($message['role'] ?? null) === 'user') {
+                $assistantMessagesSinceLastUser = 0;
+
+                continue;
+            }
+
             if (($message['role'] ?? null) !== 'assistant') {
                 continue;
             }
@@ -29,7 +36,13 @@ final class CodexTokenUsageExtractor
                 continue;
             }
 
-            $usage = $usage->withAdded($this->fromMetadata($metadata));
+            $usage = $usage->withAdded($this->fromMetadata($metadata, includeNestedAssistantMessages: $assistantMessagesSinceLastUser === 0));
+            ++$assistantMessagesSinceLastUser;
+
+            $toolCalls = $message['tool_calls'] ?? null;
+            if (!is_array($toolCalls) || $toolCalls === []) {
+                $assistantMessagesSinceLastUser = 0;
+            }
         }
 
         return $usage;
@@ -38,7 +51,7 @@ final class CodexTokenUsageExtractor
     /**
      * @param array<string, mixed> $metadata
      */
-    private function fromMetadata(array $metadata): CodexTokenUsage
+    private function fromMetadata(array $metadata, bool $includeNestedAssistantMessages = true): CodexTokenUsage
     {
         $usage = is_array($metadata['final_response'] ?? null) ? $metadata['final_response'] : [];
         $normalUsage = is_array($usage['usage'] ?? null) ? $usage['usage'] : [];
@@ -53,6 +66,10 @@ final class CodexTokenUsageExtractor
             imageGenerationOutput: $imageUsage['output'],
             imageGenerationTotal: $imageUsage['total'],
         );
+
+        if (!$includeNestedAssistantMessages) {
+            return $aggregatedUsage;
+        }
 
         foreach ($this->assistantMetadataList($metadata) as $assistantMetadata) {
             $aggregatedUsage = $aggregatedUsage->withAdded($this->fromMetadata($assistantMetadata));

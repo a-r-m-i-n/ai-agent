@@ -98,8 +98,25 @@ final class CodexTokenUsage
         ];
     }
 
+    public function toJson(bool $pretty = false): string
+    {
+        $usage = array_filter(
+            $this->toArray(),
+            static fn (int $value, string $key): bool => $key === 'total' || $value !== 0,
+            ARRAY_FILTER_USE_BOTH,
+        );
+
+        $flags = JSON_THROW_ON_ERROR;
+
+        if ($pretty) {
+            $flags |= JSON_PRETTY_PRINT;
+        }
+
+        return json_encode($usage, $flags);
+    }
+
     public function __toString(): string
     {
-        return json_encode($this->toArray(), JSON_THROW_ON_ERROR);
+        return $this->toJson();
     }
 }

@@ -784,6 +784,73 @@ final class CodexClientTest extends TestCase
         ], $client->getSessionTokens()->toArray());
     }
 
+    public function testGetSessionTokensDoesNotDoubleCountNestedAssistantUsageWhenLoopMessagesAreStored(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                ['role' => 'user', 'content' => 'Prompt'],
+                [
+                    'role' => 'assistant',
+                    'content' => 'step 1',
+                    'tool_calls' => [
+                        ['id' => 'call_1', 'name' => 'custom_read', 'arguments' => ['path' => 'composer.json']],
+                    ],
+                    'metadata' => [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 5,
+                                'output_tokens' => 1,
+                                'total_tokens' => 6,
+                            ],
+                        ],
+                    ],
+                ],
+                ['role' => 'tool', 'content' => '{}', 'tool_call_id' => 'call_1'],
+                [
+                    'role' => 'assistant',
+                    'content' => 'final',
+                    'metadata' => [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 7,
+                                'output_tokens' => 3,
+                                'total_tokens' => 10,
+                            ],
+                        ],
+                        'request_assistant_messages' => [
+                            [
+                                'metadata' => [
+                                    'final_response' => [
+                                        'usage' => [
+                                            'input_tokens' => 5,
+                                            'output_tokens' => 1,
+                                            'total_tokens' => 6,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $client = new CodexClient(new CodexConfig(sessionFile: $sessionFile));
+
+        self::assertSame([
+            'input' => 12,
+            'cached_input' => 0,
+            'output' => 4,
+            'reasoning' => 0,
+            'total' => 16,
+            'image_generation_input' => 0,
+            'image_generation_output' => 0,
+            'image_generation_total' => 0,
+        ], $client->getSessionTokens()->toArray());
+    }
+
     public function testGetSessionTokensReturnsZeroForLegacySessionWithoutUsageMetadata(): void
     {
         $sessionFile = $this->tempDirectory . '/session.json';
