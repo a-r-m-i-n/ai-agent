@@ -330,11 +330,51 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         self::assertInstanceOf(ToolCallMessage::class, $followUpMessages[3]);
         self::assertStringNotContainsString('base64', $followUpMessages[3]->getContent());
         self::assertStringNotContainsString('data_url', $followUpMessages[3]->getContent());
-        self::assertSame('Analyze the attached image input from the previous view_image tool result.', $followUpMessages[4]->asText());
+        self::assertSame('Bitte analysiere das Bild.', $followUpMessages[4]->asText());
         self::assertTrue($followUpMessages[4]->hasImageContent());
         self::assertCount(2, $followUpMessages[4]->getContent());
         self::assertCount(1, $response->metadata()['attached_images']);
         self::assertSame($path, $response->metadata()['attached_images'][0]['path']);
+    }
+
+    public function testMultipleViewImageToolCallsReuseOriginalPromptForFollowUpMessage(): void
+    {
+        $firstPath = $this->tempDirectory . '/first.png';
+        $secondPath = $this->tempDirectory . '/second.png';
+        $pixel = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true);
+        file_put_contents($firstPath, $pixel);
+        file_put_contents($secondPath, $pixel);
+
+        $holder = (object) ['inputs' => []];
+        $toolRegistry = ToolRegistry::withBuiltins($this->tempDirectory);
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            results: [
+                new ToolCallResult([
+                    new ToolCall('call-1', 'view_image', ['path' => 'first.png']),
+                    new ToolCall('call-2', 'view_image', ['path' => 'second.png']),
+                ]),
+                new TextResult('final'),
+            ],
+            toolRegistry: $toolRegistry,
+        );
+
+        $response = $runtime->request('Bitte analysiere beide Bilder.');
+
+        self::assertSame('final', $response->content());
+        self::assertCount(2, $holder->inputs);
+        $followUpMessages = $holder->inputs[1]->getMessages();
+        self::assertCount(6, $followUpMessages);
+        self::assertTrue($followUpMessages[2]->hasToolCalls());
+        self::assertInstanceOf(ToolCallMessage::class, $followUpMessages[3]);
+        self::assertInstanceOf(ToolCallMessage::class, $followUpMessages[4]);
+        self::assertTrue($followUpMessages[5]->hasImageContent());
+        self::assertCount(3, $followUpMessages[5]->getContent());
+        self::assertSame('Bitte analysiere beide Bilder.', $followUpMessages[5]->asText());
+        self::assertCount(2, $response->metadata()['attached_images']);
+        self::assertSame($firstPath, $response->metadata()['attached_images'][0]['path']);
+        self::assertSame($secondPath, $response->metadata()['attached_images'][1]['path']);
     }
 
     public function testNormalToolCallStaysTextOnlyWithoutImageAttachment(): void

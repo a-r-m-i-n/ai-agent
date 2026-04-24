@@ -149,7 +149,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
                 }
 
                 $messageBag->add(Message::ofUser(
-                    'Analyze the attached image input from the previous view_image tool result.',
+                    $prompt,
                     ...$nextStepImages,
                 ));
             }
