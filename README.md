@@ -19,12 +19,16 @@ composer require armin/codex-php
 The package reads the API key from `CODEX_API_KEY` by default. The CLI reads its default model from `CODEX_DEFAULT_MODEL`.
 Models must be configured as `provider:model`, for example `openai:gpt-5`.
 
+The environment variable names are exposed as constants on `Armin\CodexPhp\CodexConfig`:
+
+- `CodexConfig::API_KEY_ENV_VAR`
+- `CodexConfig::MODEL_ENV_VAR`
+
 ```bash
 export CODEX_API_KEY=your-key
 export CODEX_DEFAULT_MODEL=openai:gpt-5
 ```
 
-If you need a different environment variable name, provide it through `CodexConfig`.
 You can also set a `workingDirectory` for relative file/command operations and customize how the system prompt is built.
 
 You can also provide auth data as a PHP object or load it from an `auth.json` file:
@@ -54,6 +58,22 @@ $client = new CodexClient(new CodexConfig(
     systemPrompt: 'Prefer short explanations and always mention potential risks.',
     systemPromptMode: 'append', // or "replace"
 ));
+```
+
+You can override model and API key directly on the `CodexConfig` object from PHP:
+
+```php
+<?php
+
+use Armin\CodexPhp\CodexClient;
+use Armin\CodexPhp\CodexConfig;
+
+$config = new CodexConfig();
+$config
+    ->setModel('openai:gpt-5.4-mini')
+    ->setApiKey('your-key');
+
+$client = new CodexClient($config);
 ```
 
 When `workingDirectory` is set, the built-in file tools resolve relative paths against it, `run_command` uses it as the default `cwd`, and `AGENTS.md` from that directory is automatically appended to the generated system prompt when present.
@@ -154,6 +174,8 @@ CLI options:
 - `--model` overrides `CODEX_DEFAULT_MODEL`
 - `--key` overrides `CODEX_API_KEY`
 - `--auth-file` loads credentials from an `auth.json` file
+
+Internally, the CLI applies `--model` and `--key` by updating the `CodexConfig` instance before the request is executed.
 
 The CLI sends a real request through Symfony AI and prints a JSON payload with the final content, tool calls, and response metadata.
 

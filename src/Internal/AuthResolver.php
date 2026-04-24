@@ -10,10 +10,11 @@ use Armin\CodexPhp\Exception\MissingApiKey;
 
 final class AuthResolver
 {
-    public function resolve(CodexConfig $config, ?string $apiKeyOverride = null): ResolvedAuth
+    public function resolve(CodexConfig $config): ResolvedAuth
     {
-        if ($apiKeyOverride !== null && $apiKeyOverride !== '') {
-            return new ResolvedAuth('api_key', apiKey: $apiKeyOverride);
+        $apiKey = $config->apiKey();
+        if ($apiKey !== null) {
+            return new ResolvedAuth('api_key', apiKey: $apiKey);
         }
 
         $auth = $config->auth();
@@ -28,11 +29,6 @@ final class AuthResolver
             };
         }
 
-        $apiKey = $config->apiKey();
-        if ($apiKey === null) {
-            throw MissingApiKey::forEnvVar($config->apiKeyEnvVar());
-        }
-
-        return new ResolvedAuth('api_key', apiKey: $apiKey);
+        throw MissingApiKey::forEnvVar($config->apiKeyEnvVar());
     }
 }

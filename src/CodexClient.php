@@ -78,14 +78,14 @@ final class CodexClient
         return $this->toolRegistry->has($name);
     }
 
-    public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
+    public function request(string $prompt): CodexResponse
     {
-        return $this->runtime->request($prompt, $modelOverride, $apiKeyOverride);
+        return $this->runtime->request($prompt);
     }
 
-    public function requestText(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): string
+    public function requestText(string $prompt): string
     {
-        return $this->request($prompt, $modelOverride, $apiKeyOverride)->content();
+        return $this->request($prompt)->content();
     }
 
     /**

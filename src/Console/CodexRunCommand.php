@@ -37,7 +37,7 @@ final class CodexRunCommand extends Command
             ->addOption('model', null, InputOption::VALUE_REQUIRED, 'The model to use.')
             ->addOption('key', null, InputOption::VALUE_REQUIRED, 'The API key to use.')
             ->addOption('auth-file', null, InputOption::VALUE_REQUIRED, 'Path to an auth.json file.')
-            ->addOption('debug', null, InputOption::VALUE_NONE, 'Output only the final provider response when available.')
+            ->addOption('debug', null, InputOption::VALUE_NONE, 'Output debug JSON with the prompt, response content, metadata, and tool calls.')
             ->addOption('debug-all', null, InputOption::VALUE_NONE, 'Output the final provider response together with all parsed stream events when available.');
     }
 
@@ -59,38 +59,30 @@ final class CodexRunCommand extends Command
         $config = $auth === null
             ? $this->config
             : new CodexConfig(
-                apiKey: null,
-                apiKeyEnvVar: $this->config->apiKeyEnvVar(),
+                apiKey: $this->config->apiKey(),
                 model: $this->config->model(),
-                modelEnvVar: $this->config->modelEnvVar(),
                 auth: $auth,
                 workingDirectory: $this->config->workingDirectory(),
                 systemPrompt: $this->config->systemPrompt(),
                 systemPromptMode: $this->config->systemPromptMode(),
             );
 
-        $model = $config->resolveModel(is_string($modelOption) ? $modelOption : null);
-        $this->authResolver->resolve($config, is_string($keyOption) ? $keyOption : null);
+        if (is_string($modelOption) && $modelOption !== '') {
+            $config->setModel($modelOption);
+        }
+
+        if (is_string($keyOption) && $keyOption !== '') {
+            $config->setApiKey($keyOption);
+        }
+
+        $model = $config->model();
+        $this->authResolver->resolve($config);
 
         if ($model === null) {
             throw MissingModel::forEnvVar($config->modelEnvVar());
         }
 
-        $keySource = is_string($keyOption) && $keyOption !== ''
-            ? 'option'
-            : ($auth !== null ? 'auth_file' : 'env');
-        $modelSource = is_string($modelOption) && $modelOption !== '' ? 'option' : 'env';
-        $response = ($this->client ?? new CodexClient($config))->request($prompt, $model, is_string($keyOption) ? $keyOption : null);
-
-        $payload = [
-            'prompt' => $prompt,
-            'model' => $response->model(),
-            'model_source' => $modelSource,
-            'api_key_source' => $keySource,
-            'content' => $response->content(),
-            'tool_calls' => $response->toolCalls(),
-            'metadata' => $response->metadata(),
-        ];
+        $response = ($this->client ?? new CodexClient($config))->request($prompt);
 
         if ($debugAll) {
             $output->writeln(json_encode([
@@ -102,12 +94,24 @@ final class CodexRunCommand extends Command
         }
 
         if ($debug) {
-            $output->writeln(json_encode($response->metadata()['final_response'] ?? null, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+            $keySource = is_string($keyOption) && $keyOption !== ''
+                ? 'option'
+                : ($auth !== null ? 'auth_file' : 'env');
+            $modelSource = is_string($modelOption) && $modelOption !== '' ? 'option' : 'env';
+            $output->writeln(json_encode([
+                'prompt' => $prompt,
+                'model' => $response->model(),
+                'model_source' => $modelSource,
+                'api_key_source' => $keySource,
+                'content' => $response->content(),
+                'tool_calls' => $response->toolCalls(),
+                'metadata' => $response->metadata(),
+            ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 
             return Command::SUCCESS;
         }
 
-        $output->writeln(json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+        $output->writeln($response->content());
 
         return Command::SUCCESS;
     }

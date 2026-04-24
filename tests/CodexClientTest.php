@@ -26,16 +26,16 @@ final class CodexClientTest extends TestCase
 
     protected function setUp(): void
     {
-        putenv('CODEX_API_KEY');
-        putenv('CODEX_DEFAULT_MODEL');
+        putenv(CodexConfig::API_KEY_ENV_VAR);
+        putenv(CodexConfig::MODEL_ENV_VAR);
         $this->tempDirectory = sys_get_temp_dir() . '/codex-php-tests-' . bin2hex(random_bytes(4));
         mkdir($this->tempDirectory, 0777, true);
     }
 
     protected function tearDown(): void
     {
-        putenv('CODEX_API_KEY');
-        putenv('CODEX_DEFAULT_MODEL');
+        putenv(CodexConfig::API_KEY_ENV_VAR);
+        putenv(CodexConfig::MODEL_ENV_VAR);
         $this->removeDirectory($this->tempDirectory);
     }
 
@@ -50,7 +50,7 @@ final class CodexClientTest extends TestCase
 
     public function testApiKeyIsReadFromEnvironment(): void
     {
-        putenv('CODEX_API_KEY=test-key');
+        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
 
         $client = new CodexClient(new CodexConfig());
 
@@ -67,6 +67,18 @@ final class CodexClientTest extends TestCase
 
         self::assertNull($client->apiKey());
         self::assertNotNull($client->auth());
+    }
+
+    public function testMutableApiKeyOverrideTakesPrecedenceOverAuthObject(): void
+    {
+        $config = new CodexConfig(auth: new CodexAuth(
+            authMode: CodexAuth::MODE_API_KEY,
+            apiKey: 'auth-key',
+        ));
+
+        $config->setApiKey('override-key');
+
+        self::assertSame('override-key', $config->apiKey());
     }
 
     public function testConfigExposesWorkingDirectoryAndSystemPromptSettings(): void
@@ -91,7 +103,7 @@ final class CodexClientTest extends TestCase
 
     public function testMissingApiKeyReturnsNull(): void
     {
-        putenv('CODEX_API_KEY');
+        putenv(CodexConfig::API_KEY_ENV_VAR);
 
         $client = new CodexClient(new CodexConfig());
 
@@ -294,11 +306,11 @@ final class CodexClientTest extends TestCase
     public function testRequestReturnsStructuredResponse(): void
     {
         $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
+            public function request(string $prompt): CodexResponse
             {
                 return new CodexResponse(
                     content: 'hello world',
-                    model: $modelOverride ?? 'openai:gpt-5',
+                    model: 'openai:gpt-5',
                     toolCalls: [
                         ['name' => 'read_file', 'arguments' => ['path' => '/tmp/example.txt']],
                     ],
@@ -319,7 +331,7 @@ final class CodexClientTest extends TestCase
     public function testRequestTextReturnsOnlyContent(): void
     {
         $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
+            public function request(string $prompt): CodexResponse
             {
                 return new CodexResponse('plain answer', 'openai:gpt-5');
             }
@@ -330,26 +342,15 @@ final class CodexClientTest extends TestCase
         self::assertSame('plain answer', $client->requestText('Prompt'));
     }
 
-    public function testRequestPassesOverridesToRuntime(): void
+    public function testRequestUsesMutableConfigOverrides(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public ?string $model = null;
-            public ?string $apiKey = null;
+        $config = new CodexConfig();
+        $config
+            ->setModel('openai:gpt-5.1')
+            ->setApiKey('secret');
 
-            public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
-            {
-                $this->model = $modelOverride;
-                $this->apiKey = $apiKeyOverride;
-
-                return new CodexResponse('ok', $modelOverride ?? 'default');
-            }
-        };
-
-        $client = new CodexClient(runtime: $runtime);
-        $client->request('Prompt', 'openai:gpt-5.1', 'secret');
-
-        self::assertSame('openai:gpt-5.1', $runtime->model);
-        self::assertSame('secret', $runtime->apiKey);
+        self::assertSame('openai:gpt-5.1', $config->model());
+        self::assertSame('secret', $config->apiKey());
     }
 
     public function testOpenAiTokenModeExecutesToolCallsThroughAgentLoop(): void

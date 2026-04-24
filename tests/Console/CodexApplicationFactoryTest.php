@@ -18,9 +18,9 @@ final class CodexApplicationFactoryTest extends TestCase
     public function testApplicationRunsCodexCommandAsDefault(): void
     {
         $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
+            public function request(string $prompt): CodexResponse
             {
-                return new CodexResponse('Factory test response', $modelOverride ?? 'openai:gpt-5');
+                return new CodexResponse('Factory test response', 'openai:gpt-5');
             }
         };
 
@@ -36,6 +36,6 @@ final class CodexApplicationFactoryTest extends TestCase
 
         self::assertTrue($application->has('codex'));
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('"prompt": "Smoke test"', $output->fetch());
+        self::assertSame("Factory test response\n", $output->fetch());
     }
 }

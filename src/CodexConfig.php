@@ -8,12 +8,13 @@ use Armin\CodexPhp\Auth\CodexAuth;
 
 final class CodexConfig
 {
+    public const API_KEY_ENV_VAR = 'CODEX_API_KEY';
+    public const MODEL_ENV_VAR = 'CODEX_DEFAULT_MODEL';
+
     public function __construct(
-        private readonly ?string $apiKey = null,
-        private readonly string $apiKeyEnvVar = 'CODEX_API_KEY',
-        private readonly ?string $model = null,
-        private readonly string $modelEnvVar = 'CODEX_DEFAULT_MODEL',
-        private readonly ?CodexAuth $auth = null,
+        private ?string $apiKey = null,
+        private ?string $model = null,
+        private ?CodexAuth $auth = null,
         private readonly ?string $workingDirectory = null,
         private readonly ?string $systemPrompt = null,
         private readonly string $systemPromptMode = 'append',
@@ -30,15 +31,15 @@ final class CodexConfig
 
     public function apiKey(): ?string
     {
-        if ($this->auth instanceof CodexAuth && $this->auth->authMode() === CodexAuth::MODE_API_KEY) {
-            return $this->auth->credential();
-        }
-
         if ($this->apiKey !== null && $this->apiKey !== '') {
             return $this->apiKey;
         }
 
-        $value = getenv($this->apiKeyEnvVar);
+        if ($this->auth instanceof CodexAuth && $this->auth->authMode() === CodexAuth::MODE_API_KEY) {
+            return $this->auth->credential();
+        }
+
+        $value = getenv(self::API_KEY_ENV_VAR);
 
         if (!is_string($value) || $value === '') {
             return null;
@@ -49,20 +50,7 @@ final class CodexConfig
 
     public function apiKeyEnvVar(): string
     {
-        return $this->apiKeyEnvVar;
-    }
-
-    public function resolveApiKey(?string $override = null): ?string
-    {
-        if ($override !== null && $override !== '') {
-            return $override;
-        }
-
-        if ($this->auth instanceof CodexAuth && $this->auth->authMode() === CodexAuth::MODE_API_KEY) {
-            return $this->auth->credential();
-        }
-
-        return $this->apiKey();
+        return self::API_KEY_ENV_VAR;
     }
 
     public function model(): ?string
@@ -71,7 +59,7 @@ final class CodexConfig
             return $this->model;
         }
 
-        $value = getenv($this->modelEnvVar);
+        $value = getenv(self::MODEL_ENV_VAR);
 
         if (!is_string($value) || $value === '') {
             return null;
@@ -80,18 +68,30 @@ final class CodexConfig
         return $value;
     }
 
-    public function resolveModel(?string $override = null): ?string
-    {
-        if ($override !== null && $override !== '') {
-            return $override;
-        }
-
-        return $this->model();
-    }
-
     public function modelEnvVar(): string
     {
-        return $this->modelEnvVar;
+        return self::MODEL_ENV_VAR;
+    }
+
+    public function setApiKey(?string $apiKey): self
+    {
+        $this->apiKey = $apiKey;
+
+        return $this;
+    }
+
+    public function setModel(?string $model): self
+    {
+        $this->model = $model;
+
+        return $this;
+    }
+
+    public function setAuth(?CodexAuth $auth): self
+    {
+        $this->auth = $auth;
+
+        return $this;
     }
 
     public function workingDirectory(): ?string

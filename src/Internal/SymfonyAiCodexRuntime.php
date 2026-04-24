@@ -34,16 +34,16 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
     ) {
     }
 
-    public function request(string $prompt, ?string $modelOverride = null, ?string $apiKeyOverride = null): CodexResponse
+    public function request(string $prompt): CodexResponse
     {
-        $model = $this->config->resolveModel($modelOverride);
+        $model = $this->config->model();
 
         if ($model === null) {
             throw MissingModel::forEnvVar($this->config->modelEnvVar());
         }
 
         $resolvedModel = $this->modelNameParser->parse($model);
-        $resolvedAuth = $this->authResolver->resolve($this->config, $apiKeyOverride);
+        $resolvedAuth = $this->authResolver->resolve($this->config);
         $toolbox = new SymfonyAiToolbox($this->toolRegistry);
         $agentProcessor = new AgentProcessor($toolbox);
         $agent = new Agent(
