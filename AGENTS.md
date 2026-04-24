@@ -10,7 +10,7 @@ This repository contains the `armin/codex-php` Composer package. It provides a s
 - Main package name: `armin/codex-php`
 - Default API key env var: `CODEX_API_KEY`
 - Default CLI model env var: `CODEX_DEFAULT_MODEL`
-- Install dependencies with Composer before running tests
+- Run Composer commands only through DDEV, for example `ddev exec composer install`
 
 ## Main entry points
 
@@ -25,6 +25,7 @@ This repository contains the `armin/codex-php` Composer package. It provides a s
 - New actions should be added through the tool registry API
 - Keep tool inputs and outputs simple and consistent
 - The CLI currently validates config and prints JSON, but does not call OpenAI yet
+- Commands like `composer` and `php` must always be executed through `ddev exec`
 - Do not run Git commands in parallel, to avoid conflicts with the `.git/index.lock` file
 - If a Git command fails because of `.git/index.lock`, wait one second and try again
 - Commit messages must be in English and start with one of: `[FEATURE]`, `[TASK]`, `[BUGFIX]`
@@ -33,9 +34,9 @@ This repository contains the `armin/codex-php` Composer package. It provides a s
 
 ## Verification
 
-- Run `ddev composer install`
-- Run `ddev composer test`
-- Use `ddev exec php` when PHP commands need to run inside the DDEV environment
+- Run `ddev exec composer install`
+- Run `ddev exec composer test`
+- Use `ddev exec php` for all PHP commands without exception
 - Run `ddev exec php vendor/bin/phpunit` for the test suite
 - Run `ddev exec bin/codex "Prompt" --model=openai:gpt-5.4-mini --auth-file=./auth.json` to smoke-test the CLI with a real API request
 - The repository already contains an `auth.json` file that can be used for real API requests during local smoke tests

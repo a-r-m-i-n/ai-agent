@@ -9,6 +9,7 @@ use Armin\CodexPhp\Auth\CodexAuthTokens;
 use Armin\CodexPhp\CodexClient;
 use Armin\CodexPhp\CodexConfig;
 use Armin\CodexPhp\CodexResponse;
+use Armin\CodexPhp\Exception\InvalidToolInput;
 use Armin\CodexPhp\Exception\ToolNotFound;
 use Armin\CodexPhp\Internal\CodexRuntimeInterface;
 use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
@@ -177,6 +178,8 @@ final class CodexClientTest extends TestCase
         self::assertSame(0, $result->payload()['exit_code']);
         self::assertSame('ok', $result->payload()['stdout']);
         self::assertSame('', $result->payload()['stderr']);
+        self::assertFalse($result->payload()['timed_out']);
+        self::assertNull($result->payload()['timeout']);
     }
 
     public function testRunCommandUsesConfiguredWorkingDirectoryByDefault(): void
@@ -190,6 +193,34 @@ final class CodexClientTest extends TestCase
         self::assertTrue($result->isSuccess());
         self::assertSame($this->tempDirectory, trim((string) $result->payload()['stdout']));
         self::assertSame($this->tempDirectory, $result->payload()['cwd']);
+    }
+
+    public function testRunCommandSupportsConfigurableTimeout(): void
+    {
+        $client = new CodexClient();
+
+        $result = $client->runTool('run_command', [
+            'command' => ['sh', '-c', 'sleep 1'],
+            'cwd' => $this->tempDirectory,
+            'timeout' => 0.1,
+        ]);
+
+        self::assertFalse($result->isSuccess());
+        self::assertTrue($result->payload()['timed_out']);
+        self::assertSame(0.1, $result->payload()['timeout']);
+        self::assertSame('Process timed out.', $result->payload()['error']);
+    }
+
+    public function testRunCommandRejectsInvalidTimeout(): void
+    {
+        $client = new CodexClient();
+
+        $this->expectException(InvalidToolInput::class);
+
+        $client->runTool('run_command', [
+            'command' => ['pwd'],
+            'timeout' => 0,
+        ]);
     }
 
     public function testCustomToolCanBeRegistered(): void

@@ -9,6 +9,8 @@ use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolDescriptionInterface;
 use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolResult;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 final class RunCommandTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface, ToolDescriptionInterface
 {
@@ -33,6 +35,11 @@ final class RunCommandTool extends AbstractTool implements ToolInterface, Schema
                     'type' => 'string',
                     'description' => 'Working directory for the command. Defaults to the current working directory.',
                 ],
+                'timeout' => [
+                    'type' => 'number',
+                    'description' => 'Maximum runtime in seconds. When omitted, the process timeout is disabled.',
+                    'exclusiveMinimum' => 0,
+                ],
             ],
             'required' => ['command'],
         ];
@@ -40,7 +47,7 @@ final class RunCommandTool extends AbstractTool implements ToolInterface, Schema
 
     public function description(): string
     {
-        return 'Runs a local command with arguments and can use a configured working directory when no explicit cwd is provided.';
+        return 'Runs a local command with arguments, can use a configured working directory when no explicit cwd is provided, and accepts an optional timeout in seconds.';
     }
 
     public function execute(array $input): ToolResult
@@ -67,37 +74,44 @@ final class RunCommandTool extends AbstractTool implements ToolInterface, Schema
             $workingDirectory = $this->defaultWorkingDirectory();
         }
 
-        $descriptorSpec = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
+        $timeout = $input['timeout'] ?? null;
 
-        $process = proc_open($command, $descriptorSpec, $pipes, $workingDirectory);
-
-        if (!is_resource($process)) {
-            return ToolResult::failure([
-                'command' => $command,
-                'error' => 'Unable to start command.',
-            ]);
+        if ($timeout !== null && !is_int($timeout) && !is_float($timeout)) {
+            throw new InvalidToolInput('The "timeout" input must be a positive number when provided.');
         }
 
-        fclose($pipes[0]);
+        if (is_int($timeout) || is_float($timeout)) {
+            if ($timeout <= 0) {
+                throw new InvalidToolInput('The "timeout" input must be a positive number when provided.');
+            }
+        }
 
-        $stdout = stream_get_contents($pipes[1]);
-        $stderr = stream_get_contents($pipes[2]);
+        $process = new Process($command, $workingDirectory);
+        $process->setTimeout($timeout);
 
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-
-        $exitCode = proc_close($process);
+        try {
+            $process->run();
+        } catch (ProcessTimedOutException) {
+            return ToolResult::failure([
+                'command' => $command,
+                'cwd' => $workingDirectory,
+                'stdout' => $process->getOutput(),
+                'stderr' => $process->getErrorOutput(),
+                'exit_code' => $process->getExitCode(),
+                'timed_out' => true,
+                'timeout' => $timeout,
+                'error' => 'Process timed out.',
+            ]);
+        }
 
         return ToolResult::success([
             'command' => $command,
             'cwd' => $workingDirectory,
-            'stdout' => $stdout === false ? '' : $stdout,
-            'stderr' => $stderr === false ? '' : $stderr,
-            'exit_code' => $exitCode,
+            'stdout' => $process->getOutput(),
+            'stderr' => $process->getErrorOutput(),
+            'exit_code' => $process->getExitCode(),
+            'timed_out' => false,
+            'timeout' => $timeout,
         ]);
     }
 }
