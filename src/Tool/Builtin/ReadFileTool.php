@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Armin\CodexPhp\Tool\Builtin;
 
 use Armin\CodexPhp\Tool\ToolInterface;
+use Armin\CodexPhp\Tool\ToolDescriptionInterface;
 use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolResult;
 use Symfony\Component\Finder\Finder;
 
-final class ReadFileTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface
+final class ReadFileTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface, ToolDescriptionInterface
 {
     public function name(): string
     {
@@ -31,9 +32,14 @@ final class ReadFileTool extends AbstractTool implements ToolInterface, SchemaAw
         ];
     }
 
+    public function description(): string
+    {
+        return 'Reads the contents of a file from an absolute path or from a path relative to the configured working directory.';
+    }
+
     public function execute(array $input): ToolResult
     {
-        $path = $this->requireString($input, 'path');
+        $path = $this->resolvePath($this->requireString($input, 'path'));
         $directory = dirname($path);
 
         if (!is_dir($directory)) {

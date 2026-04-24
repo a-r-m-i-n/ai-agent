@@ -6,6 +6,7 @@ namespace Armin\CodexPhp\Tests\Internal;
 
 use Armin\CodexPhp\Internal\SymfonyAiToolbox;
 use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
+use Armin\CodexPhp\Tool\ToolDescriptionInterface;
 use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolRegistry;
 use Armin\CodexPhp\Tool\ToolResult;
@@ -34,6 +35,7 @@ final class SymfonyAiToolboxTest extends TestCase
 
         self::assertCount(1, $tools);
         self::assertSame('custom_tool', $tools[0]->getName());
+        self::assertSame('Executes the "custom_tool" tool.', $tools[0]->getDescription());
     }
 
     public function testExecuteReturnsJsonEncodedToolPayload(): void
@@ -95,5 +97,31 @@ final class SymfonyAiToolboxTest extends TestCase
 
         self::assertSame(['path' => ['type' => 'string']], $tools[0]->getParameters()['properties']);
         self::assertSame(['path'], $tools[0]->getParameters()['required']);
+    }
+
+    public function testGetToolsUsesExplicitToolDescriptionWhenAvailable(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->register(new class implements ToolInterface, ToolDescriptionInterface {
+            public function name(): string
+            {
+                return 'custom_tool';
+            }
+
+            public function description(): string
+            {
+                return 'Runs a custom action for the current task.';
+            }
+
+            public function execute(array $input): ToolResult
+            {
+                return ToolResult::success($input);
+            }
+        });
+
+        $toolbox = new SymfonyAiToolbox($registry);
+        $tools = $toolbox->getTools();
+
+        self::assertSame('Runs a custom action for the current task.', $tools[0]->getDescription());
     }
 }

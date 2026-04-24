@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Armin\CodexPhp\Tool\Builtin;
 
 use Armin\CodexPhp\Tool\ToolInterface;
+use Armin\CodexPhp\Tool\ToolDescriptionInterface;
 use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolResult;
 
-final class WriteFileTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface
+final class WriteFileTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface, ToolDescriptionInterface
 {
     public function name(): string
     {
@@ -34,9 +35,14 @@ final class WriteFileTool extends AbstractTool implements ToolInterface, SchemaA
         ];
     }
 
+    public function description(): string
+    {
+        return 'Writes complete file contents to an absolute path or to a path relative to the configured working directory.';
+    }
+
     public function execute(array $input): ToolResult
     {
-        $path = $this->requireString($input, 'path');
+        $path = $this->resolvePath($this->requireString($input, 'path'));
         $contents = $input['contents'] ?? null;
 
         if (!is_string($contents)) {

@@ -64,6 +64,9 @@ final class CodexRunCommand extends Command
                 model: $this->config->model(),
                 modelEnvVar: $this->config->modelEnvVar(),
                 auth: $auth,
+                workingDirectory: $this->config->workingDirectory(),
+                systemPrompt: $this->config->systemPrompt(),
+                systemPromptMode: $this->config->systemPromptMode(),
             );
 
         $model = $config->resolveModel(is_string($modelOption) ? $modelOption : null);

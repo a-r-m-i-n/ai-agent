@@ -14,7 +14,13 @@ final class CodexConfig
         private readonly ?string $model = null,
         private readonly string $modelEnvVar = 'CODEX_DEFAULT_MODEL',
         private readonly ?CodexAuth $auth = null,
+        private readonly ?string $workingDirectory = null,
+        private readonly ?string $systemPrompt = null,
+        private readonly string $systemPromptMode = 'append',
     ) {
+        if (!in_array($this->systemPromptMode, ['append', 'replace'], true)) {
+            throw new \InvalidArgumentException(sprintf('Invalid system prompt mode "%s". Supported values are "append" and "replace".', $this->systemPromptMode));
+        }
     }
 
     public function auth(): ?CodexAuth
@@ -86,5 +92,28 @@ final class CodexConfig
     public function modelEnvVar(): string
     {
         return $this->modelEnvVar;
+    }
+
+    public function workingDirectory(): ?string
+    {
+        if ($this->workingDirectory === null || $this->workingDirectory === '') {
+            return null;
+        }
+
+        return $this->workingDirectory;
+    }
+
+    public function systemPrompt(): ?string
+    {
+        if ($this->systemPrompt === null || $this->systemPrompt === '') {
+            return null;
+        }
+
+        return $this->systemPrompt;
+    }
+
+    public function systemPromptMode(): string
+    {
+        return $this->systemPromptMode;
     }
 }

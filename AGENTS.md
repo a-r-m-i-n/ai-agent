@@ -33,8 +33,8 @@ This repository contains the `armin/codex-php` Composer package. It provides a s
 
 ## Verification
 
-- Run `composer install`
-- Run `composer test`
+- Run `ddev composer install`
+- Run `ddev composer test`
 - Use `ddev exec php` when PHP commands need to run inside the DDEV environment
 - Run `ddev exec php vendor/bin/phpunit` for the test suite
 - Run `ddev exec bin/codex "Prompt" --model=openai:gpt-5.4-mini --auth-file=./auth.json` to smoke-test the CLI with a real API request

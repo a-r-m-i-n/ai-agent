@@ -7,6 +7,8 @@ namespace Armin\CodexPhp;
 use Armin\CodexPhp\Auth\CodexAuth;
 use Armin\CodexPhp\Exception\ToolNotFound;
 use Armin\CodexPhp\Internal\CodexRuntimeInterface;
+use Armin\CodexPhp\Internal\DefaultSystemPromptBuilder;
+use Armin\CodexPhp\Internal\SystemPromptBuilderInterface;
 use Armin\CodexPhp\Internal\SymfonyAiCodexRuntime;
 use Armin\CodexPhp\Tool\Builtin\ReadFileTool;
 use Armin\CodexPhp\Tool\Builtin\RunCommandTool;
@@ -27,6 +29,7 @@ final class CodexClient
         bool $registerBuiltins = true,
         ?HttpClientInterface $httpClient = null,
         ?CodexRuntimeInterface $runtime = null,
+        ?SystemPromptBuilderInterface $systemPromptBuilder = null,
     ) {
         $this->toolRegistry = $toolRegistry ?? new ToolRegistry();
 
@@ -34,7 +37,12 @@ final class CodexClient
             $this->registerBuiltins();
         }
 
-        $this->runtime = $runtime ?? new SymfonyAiCodexRuntime($this->config, $this->toolRegistry, $httpClient);
+        $this->runtime = $runtime ?? new SymfonyAiCodexRuntime(
+            $this->config,
+            $this->toolRegistry,
+            $httpClient,
+            systemPromptBuilder: $systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry),
+        );
     }
 
     public function config(): CodexConfig
@@ -92,8 +100,8 @@ final class CodexClient
 
     private function registerBuiltins(): void
     {
-        $this->registerTool(new ReadFileTool());
-        $this->registerTool(new WriteFileTool());
-        $this->registerTool(new RunCommandTool());
+        $this->registerTool(new ReadFileTool($this->config->workingDirectory()));
+        $this->registerTool(new WriteFileTool($this->config->workingDirectory()));
+        $this->registerTool(new RunCommandTool($this->config->workingDirectory()));
     }
 }

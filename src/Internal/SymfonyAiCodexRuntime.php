@@ -30,6 +30,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         private readonly CodexResponseMapper $responseMapper = new CodexResponseMapper(),
         private readonly ModelNameParser $modelNameParser = new ModelNameParser(),
         private readonly AuthResolver $authResolver = new AuthResolver(),
+        private readonly ?SystemPromptBuilderInterface $systemPromptBuilder = null,
     ) {
     }
 
@@ -49,7 +50,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             $this->createPlatform($resolvedModel->provider(), $resolvedAuth),
             $resolvedModel->model(),
             [
-                new SystemPromptInputProcessor(CodexSystemPrompt::default(), $toolbox),
+                new SystemPromptInputProcessor(($this->systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry))->build(), $toolbox),
                 $agentProcessor,
             ],
             [$agentProcessor],

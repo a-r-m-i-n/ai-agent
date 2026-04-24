@@ -6,10 +6,11 @@ namespace Armin\CodexPhp\Tool\Builtin;
 
 use Armin\CodexPhp\Exception\InvalidToolInput;
 use Armin\CodexPhp\Tool\ToolInterface;
+use Armin\CodexPhp\Tool\ToolDescriptionInterface;
 use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolResult;
 
-final class RunCommandTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface
+final class RunCommandTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface, ToolDescriptionInterface
 {
     public function name(): string
     {
@@ -37,6 +38,11 @@ final class RunCommandTool extends AbstractTool implements ToolInterface, Schema
         ];
     }
 
+    public function description(): string
+    {
+        return 'Runs a local command with arguments and can use a configured working directory when no explicit cwd is provided.';
+    }
+
     public function execute(array $input): ToolResult
     {
         $command = $input['command'] ?? null;
@@ -51,10 +57,14 @@ final class RunCommandTool extends AbstractTool implements ToolInterface, Schema
             }
         }
 
-        $workingDirectory = $input['cwd'] ?? getcwd();
+        $workingDirectory = $input['cwd'] ?? $this->defaultWorkingDirectory() ?? getcwd();
 
         if (!is_string($workingDirectory) || $workingDirectory === '') {
             throw new InvalidToolInput('The "cwd" input must be a non-empty string when provided.');
+        }
+
+        if (!isset($input['cwd']) && $this->defaultWorkingDirectory() !== null) {
+            $workingDirectory = $this->defaultWorkingDirectory();
         }
 
         $descriptorSpec = [

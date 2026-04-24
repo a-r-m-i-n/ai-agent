@@ -29,7 +29,7 @@ final class SymfonyAiToolbox implements ToolboxInterface
             fn (ToolInterface $tool): Tool => new Tool(
                 new ExecutionReference($tool::class, 'execute'),
                 $tool->name(),
-                sprintf('Executes the "%s" tool.', $tool->name()),
+                ToolMetadata::description($tool),
                 $tool instanceof SchemaAwareToolInterface ? $tool->parameters() : null,
             ),
             array_values($this->toolRegistry->all()),

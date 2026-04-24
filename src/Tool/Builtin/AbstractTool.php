@@ -8,6 +8,11 @@ use Armin\CodexPhp\Exception\InvalidToolInput;
 
 abstract class AbstractTool
 {
+    public function __construct(
+        private readonly ?string $workingDirectory = null,
+    ) {
+    }
+
     protected function requireString(array $input, string $key): string
     {
         $value = $input[$key] ?? null;
@@ -17,5 +22,28 @@ abstract class AbstractTool
         }
 
         return $value;
+    }
+
+    protected function resolvePath(string $path): string
+    {
+        if ($path === '' || $this->workingDirectory === null || $this->workingDirectory === '' || $this->isAbsolutePath($path)) {
+            return $path;
+        }
+
+        return rtrim($this->workingDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $path;
+    }
+
+    protected function defaultWorkingDirectory(): ?string
+    {
+        return $this->workingDirectory;
+    }
+
+    private function isAbsolutePath(string $path): bool
+    {
+        if (str_starts_with($path, '/') || str_starts_with($path, '\\')) {
+            return true;
+        }
+
+        return (bool) preg_match('/^[A-Za-z]:[\\\\\\/]/', $path);
     }
 }

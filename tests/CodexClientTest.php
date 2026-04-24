@@ -67,6 +67,26 @@ final class CodexClientTest extends TestCase
         self::assertNotNull($client->auth());
     }
 
+    public function testConfigExposesWorkingDirectoryAndSystemPromptSettings(): void
+    {
+        $config = new CodexConfig(
+            workingDirectory: $this->tempDirectory,
+            systemPrompt: 'Answer tersely.',
+            systemPromptMode: 'replace',
+        );
+
+        self::assertSame($this->tempDirectory, $config->workingDirectory());
+        self::assertSame('Answer tersely.', $config->systemPrompt());
+        self::assertSame('replace', $config->systemPromptMode());
+    }
+
+    public function testInvalidSystemPromptModeThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new CodexConfig(systemPromptMode: 'invalid');
+    }
+
     public function testMissingApiKeyReturnsNull(): void
     {
         putenv('CODEX_API_KEY');
@@ -95,6 +115,27 @@ final class CodexClientTest extends TestCase
 
         self::assertTrue($read->isSuccess());
         self::assertSame('hello', $read->payload()['contents']);
+    }
+
+    public function testReadAndWriteFileToolsResolveRelativePathsAgainstConfiguredWorkingDirectory(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+
+        $write = $client->runTool('write_file', [
+            'path' => 'nested/example.txt',
+            'contents' => 'hello',
+        ]);
+
+        self::assertTrue($write->isSuccess());
+        self::assertSame($this->tempDirectory . '/nested/example.txt', $write->payload()['path']);
+
+        $read = $client->runTool('read_file', [
+            'path' => 'nested/example.txt',
+        ]);
+
+        self::assertTrue($read->isSuccess());
+        self::assertSame('hello', $read->payload()['contents']);
+        self::assertSame($this->tempDirectory . '/nested/example.txt', $read->payload()['path']);
     }
 
     public function testWriteFileAllowsEmptyContents(): void
@@ -136,6 +177,19 @@ final class CodexClientTest extends TestCase
         self::assertSame(0, $result->payload()['exit_code']);
         self::assertSame('ok', $result->payload()['stdout']);
         self::assertSame('', $result->payload()['stderr']);
+    }
+
+    public function testRunCommandUsesConfiguredWorkingDirectoryByDefault(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+
+        $result = $client->runTool('run_command', [
+            'command' => ['pwd'],
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame($this->tempDirectory, trim((string) $result->payload()['stdout']));
+        self::assertSame($this->tempDirectory, $result->payload()['cwd']);
     }
 
     public function testCustomToolCanBeRegistered(): void

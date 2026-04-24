@@ -25,6 +25,7 @@ export CODEX_DEFAULT_MODEL=openai:gpt-5
 ```
 
 If you need a different environment variable name, provide it through `CodexConfig`.
+You can also set a `workingDirectory` for relative file/command operations and customize how the system prompt is built.
 
 You can also provide auth data as a PHP object or load it from an `auth.json` file:
 
@@ -39,6 +40,23 @@ $client = new CodexClient(new CodexConfig(
     auth: CodexAuth::fromFile(__DIR__ . '/auth.json'),
 ));
 ```
+
+You can configure the runtime context directly in PHP:
+
+```php
+<?php
+
+use Armin\CodexPhp\CodexClient;
+use Armin\CodexPhp\CodexConfig;
+
+$client = new CodexClient(new CodexConfig(
+    workingDirectory: __DIR__,
+    systemPrompt: 'Prefer short explanations and always mention potential risks.',
+    systemPromptMode: 'append', // or "replace"
+));
+```
+
+When `workingDirectory` is set, the built-in file tools resolve relative paths against it, `run_command` uses it as the default `cwd`, and `AGENTS.md` from that directory is automatically appended to the generated system prompt when present.
 
 The auth payload must contain either `api_key` or `tokens`. If both are missing, the package throws an error.
 `auth_mode` must be either `api_key` or `tokens`.
@@ -88,6 +106,8 @@ final class EchoTool implements ToolInterface
 $client->registerTool(new EchoTool());
 ```
 
+If a custom tool should be explained clearly to the model, implement `Armin\CodexPhp\Tool\ToolDescriptionInterface` as well. That description is used both for the generated system prompt and for the provider tool definition.
+
 ## Built-in tools
 
 - `read_file`
@@ -95,6 +115,7 @@ $client->registerTool(new EchoTool());
 - `run_command`
 
 These tools are available both through `runTool()` and as callable tools during model execution.
+Their descriptions are also included automatically in the generated system prompt.
 
 ## CLI
 

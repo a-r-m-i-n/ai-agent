@@ -6,7 +6,7 @@ namespace Armin\CodexPhp\Internal;
 
 final class CodexSystemPrompt
 {
-    public static function default(): string
+    public static function base(): string
     {
         return <<<'PROMPT'
 You are Codex, a pragmatic coding assistant.
