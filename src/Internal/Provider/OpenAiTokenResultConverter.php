@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Armin\CodexPhp\Internal\Provider;
 
-use Symfony\AI\Platform\Bridge\OpenAi\Gpt;
+use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\ContentFilterException;
@@ -32,20 +32,21 @@ final class OpenAiTokenResultConverter implements ResultConverterInterface
 
     public function supports(Model $model): bool
     {
-        return $model instanceof Gpt;
+        return $model instanceof ResponsesModel;
     }
 
     public function convert(RawResultInterface|RawHttpResult $result, array $options = []): ResultInterface
     {
         $response = $result->getObject();
+        $rawBody = $response->getContent(false);
 
         if (401 === $response->getStatusCode()) {
-            $errorMessage = json_decode($response->getContent(false), true)['error']['message'];
+            $errorMessage = json_decode($rawBody, true)['error']['message'];
             throw new AuthenticationException($errorMessage);
         }
 
         if (400 === $response->getStatusCode()) {
-            throw new BadRequestException($this->buildBadRequestMessage($response->getContent(false)));
+            throw new BadRequestException($this->buildBadRequestMessage($rawBody));
         }
 
         if (429 === $response->getStatusCode()) {
@@ -58,7 +59,12 @@ final class OpenAiTokenResultConverter implements ResultConverterInterface
         }
 
         if ($options['stream'] ?? false) {
-            return new StreamResult($this->convertStream($result));
+            $streamEvents = $this->extractStreamEventsFromBody($rawBody);
+            $streamResult = new StreamResult($this->convertStreamEvents($streamEvents));
+            $streamResult->getMetadata()->add('final_response', $this->extractFinalResponseFromStreamEvents($streamEvents));
+            $streamResult->getMetadata()->add('stream_events', $streamEvents);
+
+            return $streamResult;
         }
 
         $data = $result->getData();
@@ -77,12 +83,15 @@ final class OpenAiTokenResultConverter implements ResultConverterInterface
 
         $results = $this->convertOutputArray($data[self::KEY_OUTPUT]);
 
-        return 1 === \count($results) ? array_pop($results) : new ChoiceResult($results);
+        $convertedResult = 1 === \count($results) ? array_pop($results) : new ChoiceResult($results);
+        $convertedResult->getMetadata()->add('final_response', $data);
+
+        return $convertedResult;
     }
 
-    public function getTokenUsageExtractor(): \Symfony\AI\Platform\Bridge\OpenAi\Gpt\TokenUsageExtractor
+    public function getTokenUsageExtractor(): \Symfony\AI\Platform\Bridge\OpenResponses\TokenUsageExtractor
     {
-        return new \Symfony\AI\Platform\Bridge\OpenAi\Gpt\TokenUsageExtractor();
+        return new \Symfony\AI\Platform\Bridge\OpenResponses\TokenUsageExtractor();
     }
 
     /**
@@ -116,11 +125,15 @@ final class OpenAiTokenResultConverter implements ResultConverterInterface
         };
     }
 
-    private function convertStream(RawResultInterface|RawHttpResult $result): \Generator
+    /**
+     * @param list<array<string, mixed>> $events
+     */
+    private function convertStreamEvents(array $events): \Generator
     {
         $currentThinking = null;
+        $pendingToolCalls = [];
 
-        foreach ($result->getDataStream() as $event) {
+        foreach ($events as $event) {
             $type = $event['type'] ?? '';
 
             if ('error' === $type && isset($event['error'])) {
@@ -147,6 +160,17 @@ final class OpenAiTokenResultConverter implements ResultConverterInterface
             if ('response.reasoning_summary_text.done' === $type) {
                 yield new ThinkingComplete($currentThinking ?? '');
                 $currentThinking = null;
+            }
+
+            if ('response.output_item.done' === $type) {
+                $toolCall = $this->convertStreamToolCall($event['item'] ?? null);
+
+                if ($toolCall !== null) {
+                    $pendingToolCalls[$toolCall->getId()] = $toolCall;
+                    yield new ToolCallComplete(array_values($pendingToolCalls));
+                }
+
+                continue;
             }
 
             if (!str_contains($type, 'completed')) {
@@ -208,7 +232,27 @@ final class OpenAiTokenResultConverter implements ResultConverterInterface
     {
         $arguments = json_decode($toolCall['arguments'], true, flags: \JSON_THROW_ON_ERROR);
 
-        return new ToolCall($toolCall['id'], $toolCall['name'], $arguments);
+        return new ToolCall($toolCall['call_id'] ?? $toolCall['id'], $toolCall['name'], $arguments);
+    }
+
+    /**
+     * @param array<string, mixed>|null $item
+     */
+    private function convertStreamToolCall(?array $item): ?ToolCall
+    {
+        if (!is_array($item) || ($item['type'] ?? null) !== 'function_call') {
+            return null;
+        }
+
+        $id = $item['call_id'] ?? $item['id'] ?? null;
+        $name = $item['name'] ?? null;
+        $arguments = $item['arguments'] ?? null;
+
+        if (!is_string($id) || !is_string($name) || !is_string($arguments)) {
+            return null;
+        }
+
+        return new ToolCall($id, $name, json_decode($arguments, true, flags: \JSON_THROW_ON_ERROR));
     }
 
     private static function parseResetTime(string $resetTime): ?int
@@ -267,5 +311,71 @@ final class OpenAiTokenResultConverter implements ResultConverterInterface
         }
 
         return 'Bad Request. Response: '.json_encode($decoded, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function extractFinalResponseFromStreamEvents(array $events): ?array
+    {
+        foreach (array_reverse($events) as $decoded) {
+            if (($decoded['type'] ?? null) !== 'response.completed') {
+                continue;
+            }
+
+            $response = $decoded['response'] ?? null;
+
+            return is_array($response) ? $response : $decoded;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function extractStreamEventsFromBody(string $body): array
+    {
+        $frames = preg_split("/\r\n\r\n|\n\n|\r\r/", trim($body));
+        if (!is_array($frames)) {
+            return [];
+        }
+
+        $events = [];
+
+        foreach ($frames as $frame) {
+            $data = $this->extractDataFromFrame($frame);
+            if ($data === null || $data === '' || $data === '[DONE]') {
+                continue;
+            }
+
+            $decoded = json_decode($data, true);
+            if (is_array($decoded)) {
+                $events[] = $decoded;
+            }
+        }
+
+        return $events;
+    }
+
+    private function extractDataFromFrame(string $frame): ?string
+    {
+        $lines = preg_split("/\r\n|\n|\r/", trim($frame));
+        if (!is_array($lines)) {
+            return null;
+        }
+
+        $dataLines = [];
+        foreach ($lines as $line) {
+            if (str_starts_with($line, 'data:')) {
+                $dataLines[] = ltrim(substr($line, 5));
+            }
+        }
+
+        if ($dataLines === []) {
+            return null;
+        }
+
+        return implode("\n", $dataLines);
     }
 }

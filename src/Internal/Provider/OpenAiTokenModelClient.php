@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Armin\CodexPhp\Internal\Provider;
 
-use Symfony\AI\Platform\Bridge\OpenAi\Gpt;
+use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Exception\InvalidArgumentException;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelClientInterface;
@@ -27,7 +27,7 @@ final class OpenAiTokenModelClient implements ModelClientInterface
 
     public function supports(Model $model): bool
     {
-        return $model instanceof Gpt;
+        return $model instanceof ResponsesModel;
     }
 
     public function request(Model $model, array|string $payload, array $options = []): RawHttpResult

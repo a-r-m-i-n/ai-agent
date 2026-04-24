@@ -2,6 +2,7 @@
 
 `armin/codex-php` is a small extensible Codex client for PHP. It ships with built-in tools for reading files, writing files, and running local commands, while keeping the tool system open for consuming applications to register additional actions at runtime.
 
+
 ## Requirements
 
 - PHP `^8.4`
@@ -10,7 +11,7 @@
 ## Installation
 
 ```bash
-composer require armin/codex-php symfony/http-client symfony/finder symfony/ai
+composer require armin/codex-php
 ```
 
 ## Configuration

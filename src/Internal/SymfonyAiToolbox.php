@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Armin\CodexPhp\Internal;
 
 use Armin\CodexPhp\Tool\ToolInterface;
+use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolRegistry;
 use JsonException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
@@ -29,6 +30,7 @@ final class SymfonyAiToolbox implements ToolboxInterface
                 new ExecutionReference($tool::class, 'execute'),
                 $tool->name(),
                 sprintf('Executes the "%s" tool.', $tool->name()),
+                $tool instanceof SchemaAwareToolInterface ? $tool->parameters() : null,
             ),
             array_values($this->toolRegistry->all()),
         );

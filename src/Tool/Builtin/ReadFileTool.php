@@ -5,14 +5,30 @@ declare(strict_types=1);
 namespace Armin\CodexPhp\Tool\Builtin;
 
 use Armin\CodexPhp\Tool\ToolInterface;
+use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolResult;
 use Symfony\Component\Finder\Finder;
 
-final class ReadFileTool extends AbstractTool implements ToolInterface
+final class ReadFileTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface
 {
     public function name(): string
     {
         return 'read_file';
+    }
+
+    public function parameters(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'properties' => [
+                'path' => [
+                    'type' => 'string',
+                    'description' => 'Absolute or project-relative path of the file to read.',
+                ],
+            ],
+            'required' => ['path'],
+        ];
     }
 
     public function execute(array $input): ToolResult

@@ -70,6 +70,42 @@ final class CodexRunCommandTest extends TestCase
         self::assertSame('Hello from Codex', $payload['content']);
     }
 
+    public function testDebugOutputsOnlyFinalResponseWhenRequested(): void
+    {
+        putenv('CODEX_API_KEY=test-key');
+        putenv('CODEX_DEFAULT_MODEL=openai:gpt-5');
+
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester->execute([
+            'prompt' => 'Say hello',
+            '--debug' => true,
+        ]);
+
+        $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+
+        self::assertSame(['id' => 'resp_123', 'usage' => ['total_tokens' => 12]], $payload);
+    }
+
+    public function testDebugAllOutputsFinalResponseAndStreamEvents(): void
+    {
+        putenv('CODEX_API_KEY=test-key');
+        putenv('CODEX_DEFAULT_MODEL=openai:gpt-5');
+
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester->execute([
+            'prompt' => 'Say hello',
+            '--debug-all' => true,
+        ]);
+
+        $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+
+        self::assertSame(['id' => 'resp_123', 'usage' => ['total_tokens' => 12]], $payload['final_response']);
+        self::assertSame([
+            ['type' => 'response.created'],
+            ['type' => 'response.completed', 'response' => ['id' => 'resp_123', 'usage' => ['total_tokens' => 12]]],
+        ], $payload['stream_events']);
+    }
+
     public function testAuthFileProvidesCredentialWhenApiKeyIsMissing(): void
     {
         putenv('CODEX_DEFAULT_MODEL=openai:gpt-5');
@@ -174,7 +210,14 @@ final class CodexRunCommandTest extends TestCase
                     toolCalls: [
                         ['name' => 'read_file', 'arguments' => ['path' => '/tmp/example.txt']],
                     ],
-                    metadata: ['provider' => 'openai'],
+                    metadata: [
+                        'provider' => 'openai',
+                        'final_response' => ['id' => 'resp_123', 'usage' => ['total_tokens' => 12]],
+                        'stream_events' => [
+                            ['type' => 'response.created'],
+                            ['type' => 'response.completed', 'response' => ['id' => 'resp_123', 'usage' => ['total_tokens' => 12]]],
+                        ],
+                    ],
                 );
             }
         };

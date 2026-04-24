@@ -5,13 +5,33 @@ declare(strict_types=1);
 namespace Armin\CodexPhp\Tool\Builtin;
 
 use Armin\CodexPhp\Tool\ToolInterface;
+use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolResult;
 
-final class WriteFileTool extends AbstractTool implements ToolInterface
+final class WriteFileTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface
 {
     public function name(): string
     {
         return 'write_file';
+    }
+
+    public function parameters(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'properties' => [
+                'path' => [
+                    'type' => 'string',
+                    'description' => 'Absolute or project-relative path of the file to write.',
+                ],
+                'contents' => [
+                    'type' => 'string',
+                    'description' => 'Complete file contents to write.',
+                ],
+            ],
+            'required' => ['path', 'contents'],
+        ];
     }
 
     public function execute(array $input): ToolResult

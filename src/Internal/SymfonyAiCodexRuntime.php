@@ -44,13 +44,15 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         $resolvedModel = $this->modelNameParser->parse($model);
         $resolvedAuth = $this->authResolver->resolve($this->config, $apiKeyOverride);
         $toolbox = new SymfonyAiToolbox($this->toolRegistry);
+        $agentProcessor = new AgentProcessor($toolbox);
         $agent = new Agent(
             $this->createPlatform($resolvedModel->provider(), $resolvedAuth),
             $resolvedModel->model(),
             [
                 new SystemPromptInputProcessor(CodexSystemPrompt::default(), $toolbox),
-                new AgentProcessor($toolbox),
+                $agentProcessor,
             ],
+            [$agentProcessor],
         );
 
         $result = $agent->call(

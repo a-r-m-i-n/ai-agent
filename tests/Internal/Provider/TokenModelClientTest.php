@@ -10,7 +10,7 @@ use Armin\CodexPhp\Internal\Provider\OpenAiTokenModelClient;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Anthropic\Claude;
 use Symfony\AI\Platform\Bridge\Gemini\Gemini;
-use Symfony\AI\Platform\Bridge\OpenAi\Gpt;
+use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
@@ -28,7 +28,7 @@ final class TokenModelClientTest extends TestCase
         });
 
         $client = new OpenAiTokenModelClient($httpClient, 'token-123', 'account-456');
-        $client->request(new Gpt('gpt-5'), ['input' => []]);
+        $client->request(new ResponsesModel('gpt-5', []), ['input' => []]);
 
         self::assertInstanceOf(MockResponse::class, $capturedResponse);
         self::assertSame('https://chatgpt.com/backend-api/codex/responses', $capturedResponse->getRequestUrl());

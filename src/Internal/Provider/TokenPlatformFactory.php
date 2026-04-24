@@ -9,8 +9,8 @@ use Symfony\AI\Platform\Bridge\Anthropic;
 use Symfony\AI\Platform\Bridge\Anthropic\Contract\AnthropicContract;
 use Symfony\AI\Platform\Bridge\Gemini;
 use Symfony\AI\Platform\Bridge\Gemini\Contract\GeminiContract;
-use Symfony\AI\Platform\Bridge\OpenAi;
-use Symfony\AI\Platform\Bridge\OpenAi\Contract\OpenAiContract;
+use Symfony\AI\Platform\Bridge\OpenResponses;
+use Symfony\AI\Platform\Bridge\OpenResponses\Contract\OpenResponsesContract;
 use Symfony\AI\Platform\ModelRouter\CatalogBasedModelRouter;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\Provider;
@@ -29,8 +29,8 @@ final class TokenPlatformFactory
                     'openai',
                     [new OpenAiTokenModelClient($httpClient, $auth->accessToken() ?? '', $auth->accountId() ?? '')],
                     [new OpenAiTokenResultConverter()],
-                    new OpenAi\ModelCatalog(),
-                    OpenAiContract::create(),
+                    new OpenResponses\FallbackModelCatalog(),
+                    OpenResponsesContract::create(),
                 ),
                 'anthropic' => new Provider(
                     'anthropic',

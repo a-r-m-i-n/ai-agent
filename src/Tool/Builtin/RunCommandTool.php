@@ -6,13 +6,35 @@ namespace Armin\CodexPhp\Tool\Builtin;
 
 use Armin\CodexPhp\Exception\InvalidToolInput;
 use Armin\CodexPhp\Tool\ToolInterface;
+use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolResult;
 
-final class RunCommandTool extends AbstractTool implements ToolInterface
+final class RunCommandTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface
 {
     public function name(): string
     {
         return 'run_command';
+    }
+
+    public function parameters(): array
+    {
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'properties' => [
+                'command' => [
+                    'type' => 'array',
+                    'description' => 'Command and arguments as separate array items.',
+                    'items' => ['type' => 'string'],
+                    'minItems' => 1,
+                ],
+                'cwd' => [
+                    'type' => 'string',
+                    'description' => 'Working directory for the command. Defaults to the current working directory.',
+                ],
+            ],
+            'required' => ['command'],
+        ];
     }
 
     public function execute(array $input): ToolResult

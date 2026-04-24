@@ -36,7 +36,9 @@ final class CodexRunCommand extends Command
             ->addArgument('prompt', InputArgument::REQUIRED, 'The prompt to execute.')
             ->addOption('model', null, InputOption::VALUE_REQUIRED, 'The model to use.')
             ->addOption('key', null, InputOption::VALUE_REQUIRED, 'The API key to use.')
-            ->addOption('auth-file', null, InputOption::VALUE_REQUIRED, 'Path to an auth.json file.');
+            ->addOption('auth-file', null, InputOption::VALUE_REQUIRED, 'Path to an auth.json file.')
+            ->addOption('debug', null, InputOption::VALUE_NONE, 'Output only the final provider response when available.')
+            ->addOption('debug-all', null, InputOption::VALUE_NONE, 'Output the final provider response together with all parsed stream events when available.');
     }
 
     /**
@@ -48,6 +50,8 @@ final class CodexRunCommand extends Command
         $modelOption = $input->getOption('model');
         $keyOption = $input->getOption('key');
         $authFileOption = $input->getOption('auth-file');
+        $debug = (bool) $input->getOption('debug');
+        $debugAll = (bool) $input->getOption('debug-all');
         $auth = is_string($authFileOption) && $authFileOption !== ''
             ? $this->authFileLoader->load($authFileOption)
             : null;
@@ -84,6 +88,21 @@ final class CodexRunCommand extends Command
             'tool_calls' => $response->toolCalls(),
             'metadata' => $response->metadata(),
         ];
+
+        if ($debugAll) {
+            $output->writeln(json_encode([
+                'final_response' => $response->metadata()['final_response'] ?? null,
+                'stream_events' => $response->metadata()['stream_events'] ?? [],
+            ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+            return Command::SUCCESS;
+        }
+
+        if ($debug) {
+            $output->writeln(json_encode($response->metadata()['final_response'] ?? null, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+            return Command::SUCCESS;
+        }
 
         $output->writeln(json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 

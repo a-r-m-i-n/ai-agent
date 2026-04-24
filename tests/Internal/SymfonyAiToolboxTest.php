@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Armin\CodexPhp\Tests\Internal;
 
 use Armin\CodexPhp\Internal\SymfonyAiToolbox;
+use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolRegistry;
 use Armin\CodexPhp\Tool\ToolResult;
@@ -60,5 +61,39 @@ final class SymfonyAiToolboxTest extends TestCase
             ['success' => true, 'payload' => ['value' => 'ABC']],
             json_decode($result->getResult(), true, 512, JSON_THROW_ON_ERROR),
         );
+    }
+
+    public function testGetToolsIncludesSchemaWhenAvailable(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->register(new class implements SchemaAwareToolInterface {
+            public function name(): string
+            {
+                return 'custom_tool';
+            }
+
+            public function parameters(): array
+            {
+                return [
+                    'type' => 'object',
+                    'properties' => [
+                        'path' => ['type' => 'string'],
+                    ],
+                    'required' => ['path'],
+                    'additionalProperties' => false,
+                ];
+            }
+
+            public function execute(array $input): ToolResult
+            {
+                return ToolResult::success($input);
+            }
+        });
+
+        $toolbox = new SymfonyAiToolbox($registry);
+        $tools = $toolbox->getTools();
+
+        self::assertSame(['path' => ['type' => 'string']], $tools[0]->getParameters()['properties']);
+        self::assertSame(['path'], $tools[0]->getParameters()['required']);
     }
 }

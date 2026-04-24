@@ -11,9 +11,12 @@ use Armin\CodexPhp\CodexConfig;
 use Armin\CodexPhp\CodexResponse;
 use Armin\CodexPhp\Exception\ToolNotFound;
 use Armin\CodexPhp\Internal\CodexRuntimeInterface;
+use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolResult;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 
 final class CodexClientTest extends TestCase
 {
@@ -217,6 +220,89 @@ final class CodexClientTest extends TestCase
 
         self::assertSame('openai:gpt-5.1', $runtime->model);
         self::assertSame('secret', $runtime->apiKey);
+    }
+
+    public function testOpenAiTokenModeExecutesToolCallsThroughAgentLoop(): void
+    {
+        $requests = [];
+        $httpClient = new MockHttpClient(function (string $method, string $url, array $options) use (&$requests) {
+            $requests[] = [
+                'method' => $method,
+                'url' => $url,
+                'body' => $options['body'] ?? '',
+            ];
+
+            if (\count($requests) === 1) {
+                return new MockResponse(<<<TEXT
+event: response.created
+data: {"type":"response.created"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","item":{"id":"fc_123","type":"function_call","status":"completed","arguments":"{\"path\":\"composer.json\"}","call_id":"call_123","name":"custom_read"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_1","output":[],"usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}
+
+TEXT, ['http_code' => 200]);
+            }
+
+            return new MockResponse(<<<TEXT
+event: response.created
+data: {"type":"response.created"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"composer.json enthaelt den Namen armin/codex-php."}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_2","output":[],"usage":{"input_tokens":20,"output_tokens":8,"total_tokens":28}}}
+
+TEXT, ['http_code' => 200]);
+        });
+
+        $client = new CodexClient(
+            new CodexConfig(
+                model: 'openai:gpt-5.4-mini',
+                auth: new CodexAuth(
+                    authMode: CodexAuth::MODE_TOKENS,
+                    tokens: new CodexAuthTokens('id', 'access', 'refresh', 'account'),
+                ),
+            ),
+            registerBuiltins: false,
+            httpClient: $httpClient,
+        );
+        $client->registerTool(new class implements SchemaAwareToolInterface {
+            public function name(): string
+            {
+                return 'custom_read';
+            }
+
+            public function parameters(): array
+            {
+                return [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'properties' => [
+                        'path' => ['type' => 'string'],
+                    ],
+                    'required' => ['path'],
+                ];
+            }
+
+            public function execute(array $input): ToolResult
+            {
+                return ToolResult::success([
+                    'path' => $input['path'] ?? null,
+                    'contents' => '{"name":"armin/codex-php"}',
+                ]);
+            }
+        });
+
+        $response = $client->request('Was steht in der Datei composer.json?');
+
+        self::assertCount(2, $requests);
+        self::assertStringContainsString('"type":"function_call_output"', $requests[1]['body']);
+        self::assertStringContainsString('"call_id":"call_123"', $requests[1]['body']);
+        self::assertSame('composer.json enthaelt den Namen armin/codex-php.', $response->content());
     }
 
     public function testUnknownToolThrows(): void
