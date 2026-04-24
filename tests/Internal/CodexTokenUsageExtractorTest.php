@@ -73,4 +73,59 @@ final class CodexTokenUsageExtractorTest extends TestCase
             'image_generation_total' => 0,
         ], $extractor->fromResponse($response)->toArray());
     }
+
+    public function testFromResponseAggregatesNestedAssistantMetadataRecursively(): void
+    {
+        $extractor = new CodexTokenUsageExtractor();
+        $response = new CodexResponse(
+            content: 'done',
+            model: 'openai:gpt-5',
+            metadata: [
+                'final_response' => [
+                    'usage' => [
+                        'input_tokens' => 9,
+                        'output_tokens' => 4,
+                        'total_tokens' => 13,
+                    ],
+                ],
+                'request_assistant_messages' => [
+                    [
+                        'metadata' => [
+                            'final_response' => [
+                                'usage' => [
+                                    'input_tokens' => 5,
+                                    'output_tokens' => 2,
+                                    'total_tokens' => 7,
+                                ],
+                            ],
+                            'generated_images' => [
+                                [
+                                    'provider_response' => [
+                                        'tool_usage' => [
+                                            'image_gen' => [
+                                                'input_tokens' => 10,
+                                                'output_tokens' => 20,
+                                                'total_tokens' => 30,
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        );
+
+        self::assertSame([
+            'input' => 14,
+            'cached_input' => 0,
+            'output' => 6,
+            'reasoning' => 0,
+            'total' => 20,
+            'image_generation_input' => 10,
+            'image_generation_output' => 20,
+            'image_generation_total' => 30,
+        ], $extractor->fromResponse($response)->toArray());
+    }
 }

@@ -12,13 +12,7 @@ final class CodexTokenUsageExtractor
 {
     public function fromResponse(CodexResponse $response): CodexTokenUsage
     {
-        $usage = $this->fromMetadata($response->metadata());
-
-        foreach ($this->assistantMetadataList($response->metadata()) as $metadata) {
-            $usage = $usage->withAdded($this->fromMetadata($metadata));
-        }
-
-        return $usage;
+        return $this->fromMetadata($response->metadata());
     }
 
     public function fromSession(CodexSession $session): CodexTokenUsage
@@ -49,8 +43,7 @@ final class CodexTokenUsageExtractor
         $usage = is_array($metadata['final_response'] ?? null) ? $metadata['final_response'] : [];
         $normalUsage = is_array($usage['usage'] ?? null) ? $usage['usage'] : [];
         $imageUsage = $this->extractImageGenerationUsage($metadata['generated_images'] ?? []);
-
-        return new CodexTokenUsage(
+        $aggregatedUsage = new CodexTokenUsage(
             input: $this->readInt($normalUsage, 'input_tokens'),
             cachedInput: $this->readNestedInt($normalUsage, ['input_tokens_details', 'cached_tokens']),
             output: $this->readInt($normalUsage, 'output_tokens'),
@@ -60,6 +53,12 @@ final class CodexTokenUsageExtractor
             imageGenerationOutput: $imageUsage['output'],
             imageGenerationTotal: $imageUsage['total'],
         );
+
+        foreach ($this->assistantMetadataList($metadata) as $assistantMetadata) {
+            $aggregatedUsage = $aggregatedUsage->withAdded($this->fromMetadata($assistantMetadata));
+        }
+
+        return $aggregatedUsage;
     }
 
     /**

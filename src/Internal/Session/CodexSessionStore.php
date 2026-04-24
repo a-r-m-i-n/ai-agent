@@ -137,12 +137,160 @@ final class CodexSessionStore
 
         $json = json_encode([
             'version' => self::VERSION,
-            'messages' => $session->messages(),
+            'messages' => $this->sanitizeMessagesForPersistence($session->messages()),
         ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
 
         if (@file_put_contents($this->path, $json . PHP_EOL) === false) {
             throw InvalidSession::unwritableFile($this->path);
         }
+    }
+
+    /**
+     * @param list<array{
+     *     role: 'user'|'assistant'|'tool',
+     *     content: string,
+     *     tool_calls?: list<array{id?: string, name: string, arguments: array<string, mixed>}>,
+     *     tool_call_id?: string,
+     *     metadata?: array<string, mixed>
+     * }> $messages
+     * @return list<array<string, mixed>>
+     */
+    private function sanitizeMessagesForPersistence(array $messages): array
+    {
+        $sanitizedMessages = [];
+
+        foreach ($messages as $message) {
+            $sanitizedMessage = [
+                'role' => $message['role'],
+                'content' => $message['content'],
+            ];
+
+            if (isset($message['tool_calls']) && is_array($message['tool_calls']) && $message['tool_calls'] !== []) {
+                $sanitizedMessage['tool_calls'] = $message['tool_calls'];
+            }
+
+            if (isset($message['tool_call_id']) && is_string($message['tool_call_id'])) {
+                $sanitizedMessage['tool_call_id'] = $message['tool_call_id'];
+            }
+
+            if (($message['role'] ?? null) === 'assistant' && is_array($message['metadata'] ?? null)) {
+                $metadata = $this->sanitizeAssistantMetadata($message['metadata']);
+
+                if ($metadata !== []) {
+                    $sanitizedMessage['metadata'] = $metadata;
+                }
+            }
+
+            $sanitizedMessages[] = $sanitizedMessage;
+        }
+
+        return $sanitizedMessages;
+    }
+
+    /**
+     * @param array<string, mixed> $metadata
+     * @return array<string, mixed>
+     */
+    private function sanitizeAssistantMetadata(array $metadata): array
+    {
+        $sanitized = [];
+
+        if (is_array($metadata['final_response'] ?? null)) {
+            $usage = $this->sanitizeFinalResponse($metadata['final_response']);
+
+            if ($usage !== []) {
+                $sanitized['final_response'] = $usage;
+            }
+        }
+
+        $generatedImages = $this->sanitizeGeneratedImages($metadata['generated_images'] ?? null);
+        if ($generatedImages !== []) {
+            $sanitized['generated_images'] = $generatedImages;
+        }
+
+        $requestAssistantMessages = $this->sanitizeRequestAssistantMessages($metadata['request_assistant_messages'] ?? null);
+        if ($requestAssistantMessages !== []) {
+            $sanitized['request_assistant_messages'] = $requestAssistantMessages;
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * @param array<string, mixed> $finalResponse
+     * @return array{usage: array<string, mixed>}|array{}
+     */
+    private function sanitizeFinalResponse(array $finalResponse): array
+    {
+        $usage = $finalResponse['usage'] ?? null;
+
+        if (!is_array($usage)) {
+            return [];
+        }
+
+        return ['usage' => $usage];
+    }
+
+    /**
+     * @param mixed $generatedImages
+     * @return list<array{provider_response: array{tool_usage: array{image_gen: array<string, mixed>}}}>
+     */
+    private function sanitizeGeneratedImages(mixed $generatedImages): array
+    {
+        if (!is_array($generatedImages)) {
+            return [];
+        }
+
+        $sanitizedImages = [];
+
+        foreach ($generatedImages as $generatedImage) {
+            if (!is_array($generatedImage)) {
+                continue;
+            }
+
+            $imageUsage = $generatedImage['provider_response']['tool_usage']['image_gen'] ?? null;
+            if (!is_array($imageUsage)) {
+                continue;
+            }
+
+            $sanitizedImages[] = [
+                'provider_response' => [
+                    'tool_usage' => [
+                        'image_gen' => $imageUsage,
+                    ],
+                ],
+            ];
+        }
+
+        return $sanitizedImages;
+    }
+
+    /**
+     * @param mixed $assistantMessages
+     * @return list<array{metadata: array<string, mixed>}>
+     */
+    private function sanitizeRequestAssistantMessages(mixed $assistantMessages): array
+    {
+        if (!is_array($assistantMessages)) {
+            return [];
+        }
+
+        $sanitizedMessages = [];
+
+        foreach ($assistantMessages as $assistantMessage) {
+            if (!is_array($assistantMessage) || !is_array($assistantMessage['metadata'] ?? null)) {
+                continue;
+            }
+
+            $metadata = $this->sanitizeAssistantMetadata($assistantMessage['metadata']);
+            if ($metadata === []) {
+                continue;
+            }
+
+            $sanitizedMessages[] = ['metadata' => $metadata];
+        }
+
+        return $sanitizedMessages;
     }
 
     /**

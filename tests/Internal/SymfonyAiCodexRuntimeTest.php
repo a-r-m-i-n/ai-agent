@@ -227,8 +227,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         self::assertSame(['role' => 'user', 'content' => 'Persist this prompt'], $payload['messages'][0]);
         self::assertSame('assistant', $payload['messages'][1]['role']);
         self::assertSame('ok', $payload['messages'][1]['content']);
-        self::assertSame('test', $payload['messages'][1]['metadata']['provider']);
-        self::assertSame('resp_1', $payload['messages'][1]['metadata']['final_response']['id']);
+        self::assertArrayNotHasKey('metadata', $payload['messages'][1]);
     }
 
     public function testSessionMetadataIsArchivedButNotUsedForReplay(): void
@@ -269,8 +268,8 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         self::assertSame('Current prompt', $messages[2]->asText());
 
         $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
-        self::assertSame('resp_older', $payload['messages'][0]['metadata']['final_response']['id']);
-        self::assertSame('response.completed', $payload['messages'][0]['metadata']['stream_events'][0]['type']);
+        self::assertArrayNotHasKey('metadata', $payload['messages'][0]);
+        self::assertArrayNotHasKey('metadata', $payload['messages'][1]);
     }
 
     public function testLegacySessionWithoutToolOutputsRemainsReplayable(): void
@@ -537,8 +536,49 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
 
         self::assertCount(4, $payload['messages']);
-        self::assertSame($response->generatedImages(), $payload['messages'][3]['metadata']['generated_images']);
+        self::assertArrayNotHasKey('generated_images', $payload['messages'][3]['metadata'] ?? []);
         self::assertStringNotContainsString('tree-binary', json_encode($payload, JSON_THROW_ON_ERROR));
+    }
+
+    public function testSessionPersistsOnlyTokenRelevantAssistantMetadata(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        $holder = (object) ['inputs' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_IMAGE],
+            $holder,
+            sessionFile: $sessionFile,
+            metadata: [
+                'provider' => 'test',
+                'final_response' => [
+                    'id' => 'resp_1',
+                    'usage' => ['total_tokens' => 12],
+                    'status' => 'completed',
+                ],
+                'stream_events' => [['type' => 'response.completed']],
+            ],
+            results: [
+                new ToolCallResult([new ToolCall('call-1', 'generate_image', ['prompt' => 'Draw a tree'])]),
+                new BinaryResult('tree-binary', 'image/png'),
+                new TextResult('done'),
+            ],
+            toolRegistry: ToolRegistry::withBuiltins($this->tempDirectory),
+        );
+
+        $runtime->request('Erzeuge ein Bild.');
+        $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
+        $metadata = $payload['messages'][3]['metadata'];
+
+        self::assertArrayNotHasKey('provider', $metadata);
+        self::assertArrayNotHasKey('stream_events', $metadata);
+        self::assertArrayNotHasKey('attached_images', $metadata);
+        self::assertArrayNotHasKey('session', $metadata);
+        self::assertSame(['usage' => ['total_tokens' => 12]], $metadata['final_response']);
+        self::assertSame([
+            'metadata' => [
+                'final_response' => ['usage' => ['total_tokens' => 12]],
+            ],
+        ], $metadata['request_assistant_messages'][0]);
     }
 
     public function testSessionDoesNotPersistToolOutputsOrBinaryAttachments(): void
