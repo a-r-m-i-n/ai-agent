@@ -7,7 +7,9 @@ namespace Armin\CodexPhp;
 use Armin\CodexPhp\Auth\CodexAuth;
 use Armin\CodexPhp\Exception\ToolNotFound;
 use Armin\CodexPhp\Internal\CodexRuntimeInterface;
+use Armin\CodexPhp\Internal\CodexTokenUsageExtractor;
 use Armin\CodexPhp\Internal\DefaultSystemPromptBuilder;
+use Armin\CodexPhp\Internal\Session\CodexSessionStore;
 use Armin\CodexPhp\Internal\SystemPromptBuilderInterface;
 use Armin\CodexPhp\Internal\SymfonyAiCodexRuntime;
 use Armin\CodexPhp\Tool\ToolInterface;
@@ -19,6 +21,8 @@ final class CodexClient
 {
     private readonly ToolRegistry $toolRegistry;
     private readonly CodexRuntimeInterface $runtime;
+    private readonly CodexTokenUsageExtractor $tokenUsageExtractor;
+    private ?CodexResponse $lastResponse = null;
 
     public function __construct(
         private readonly CodexConfig $config = new CodexConfig(),
@@ -35,6 +39,8 @@ final class CodexClient
         if ($toolRegistry instanceof ToolRegistry && $registerBuiltins) {
             $this->toolRegistry->registerBuiltins($this->config->workingDirectory());
         }
+
+        $this->tokenUsageExtractor = new CodexTokenUsageExtractor();
 
         $this->runtime = $runtime ?? new SymfonyAiCodexRuntime(
             $this->config,
@@ -80,7 +86,7 @@ final class CodexClient
 
     public function request(string $prompt): CodexResponse
     {
-        return $this->runtime->request($prompt);
+        return $this->lastResponse = $this->runtime->request($prompt);
     }
 
     public function requestText(string $prompt): string
@@ -102,5 +108,31 @@ final class CodexClient
     public function tools(): array
     {
         return $this->toolRegistry->all();
+    }
+
+    public function getRequestTokens(): CodexTokenUsage
+    {
+        if (!$this->lastResponse instanceof CodexResponse) {
+            return new CodexTokenUsage();
+        }
+
+        return $this->tokenUsageExtractor->fromResponse($this->lastResponse);
+    }
+
+    public function getSessionTokens(): CodexTokenUsage
+    {
+        $sessionFile = $this->config->sessionFile();
+
+        if ($sessionFile === null) {
+            return new CodexTokenUsage();
+        }
+
+        $store = new CodexSessionStore($sessionFile);
+
+        if (!$store->exists()) {
+            return new CodexTokenUsage();
+        }
+
+        return $this->tokenUsageExtractor->fromSession($store->load());
     }
 }

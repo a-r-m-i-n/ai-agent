@@ -9,7 +9,9 @@ use Armin\CodexPhp\Auth\CodexAuthTokens;
 use Armin\CodexPhp\CodexClient;
 use Armin\CodexPhp\CodexConfig;
 use Armin\CodexPhp\CodexResponse;
+use Armin\CodexPhp\CodexTokenUsage;
 use Armin\CodexPhp\Exception\InvalidToolInput;
+use Armin\CodexPhp\Exception\InvalidSession;
 use Armin\CodexPhp\Exception\ToolNotFound;
 use Armin\CodexPhp\Internal\CodexRuntimeInterface;
 use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
@@ -487,6 +489,264 @@ final class CodexClientTest extends TestCase
         $client = new CodexClient(runtime: $runtime);
 
         self::assertSame('plain answer', $client->requestText('Prompt'));
+    }
+
+    public function testGetRequestTokensReturnsZeroUsageBeforeAnyRequest(): void
+    {
+        $client = new CodexClient(runtime: new class implements CodexRuntimeInterface {
+            public function request(string $prompt): CodexResponse
+            {
+                return new CodexResponse($prompt, 'openai:gpt-5');
+            }
+        });
+
+        self::assertSame((new CodexTokenUsage())->toArray(), $client->getRequestTokens()->toArray());
+    }
+
+    public function testGetRequestTokensReturnsUsageFromLastRequest(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt): CodexResponse
+            {
+                return new CodexResponse(
+                    content: 'hello world',
+                    model: 'openai:gpt-5',
+                    metadata: [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 10,
+                                'input_tokens_details' => ['cached_tokens' => 3],
+                                'output_tokens' => 4,
+                                'output_tokens_details' => ['reasoning_tokens' => 2],
+                                'total_tokens' => 14,
+                            ],
+                        ],
+                    ],
+                );
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+        $client->request('Say hello');
+
+        self::assertSame([
+            'input' => 10,
+            'cached_input' => 3,
+            'output' => 4,
+            'reasoning' => 2,
+            'total' => 14,
+            'image_generation_input' => 0,
+            'image_generation_output' => 0,
+            'image_generation_total' => 0,
+        ], $client->getRequestTokens()->toArray());
+    }
+
+    public function testGetRequestTokensAggregatesToolLoopAndGeneratedImageUsage(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt): CodexResponse
+            {
+                return new CodexResponse(
+                    content: 'final',
+                    model: 'openai:gpt-5',
+                    metadata: [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 20,
+                                'output_tokens' => 8,
+                                'total_tokens' => 28,
+                            ],
+                        ],
+                        'request_assistant_messages' => [
+                            [
+                                'metadata' => [
+                                    'final_response' => [
+                                        'usage' => [
+                                            'input_tokens' => 10,
+                                            'output_tokens' => 2,
+                                            'total_tokens' => 12,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        'generated_images' => [
+                            [
+                                'provider_response' => [
+                                    'tool_usage' => [
+                                        'image_gen' => [
+                                            'input_tokens' => 100,
+                                            'output_tokens' => 50,
+                                            'total_tokens' => 150,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                );
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+        $client->request('Generate something');
+
+        self::assertSame([
+            'input' => 30,
+            'cached_input' => 0,
+            'output' => 10,
+            'reasoning' => 0,
+            'total' => 40,
+            'image_generation_input' => 100,
+            'image_generation_output' => 50,
+            'image_generation_total' => 150,
+        ], $client->getRequestTokens()->toArray());
+    }
+
+    public function testGetRequestTokensTracksOnlyMostRecentRequest(): void
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            private int $calls = 0;
+
+            public function request(string $prompt): CodexResponse
+            {
+                ++$this->calls;
+
+                return new CodexResponse(
+                    content: $prompt,
+                    model: 'openai:gpt-5',
+                    metadata: [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => $this->calls,
+                                'output_tokens' => $this->calls * 2,
+                                'total_tokens' => $this->calls * 3,
+                            ],
+                        ],
+                    ],
+                );
+            }
+        };
+
+        $client = new CodexClient(runtime: $runtime);
+        $client->request('first');
+        $client->request('second');
+
+        self::assertSame([
+            'input' => 2,
+            'cached_input' => 0,
+            'output' => 4,
+            'reasoning' => 0,
+            'total' => 6,
+            'image_generation_input' => 0,
+            'image_generation_output' => 0,
+            'image_generation_total' => 0,
+        ], $client->getRequestTokens()->toArray());
+    }
+
+    public function testGetSessionTokensReturnsZeroWhenSessionFileIsNotConfiguredOrMissing(): void
+    {
+        $withoutSession = new CodexClient();
+        $missingSession = new CodexClient(new CodexConfig(sessionFile: $this->tempDirectory . '/missing-session.json'));
+
+        self::assertSame((new CodexTokenUsage())->toArray(), $withoutSession->getSessionTokens()->toArray());
+        self::assertSame((new CodexTokenUsage())->toArray(), $missingSession->getSessionTokens()->toArray());
+    }
+
+    public function testGetSessionTokensAggregatesAssistantMessagesFromSessionFile(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                ['role' => 'user', 'content' => 'Prompt'],
+                [
+                    'role' => 'assistant',
+                    'content' => 'step 1',
+                    'tool_calls' => [
+                        ['id' => 'call_1', 'name' => 'find_files', 'arguments' => ['path' => '/tmp']],
+                    ],
+                    'metadata' => [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 5,
+                                'output_tokens' => 1,
+                                'total_tokens' => 6,
+                            ],
+                        ],
+                    ],
+                ],
+                ['role' => 'tool', 'content' => '{}', 'tool_call_id' => 'call_1'],
+                [
+                    'role' => 'assistant',
+                    'content' => 'step 2',
+                    'metadata' => [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 7,
+                                'input_tokens_details' => ['cached_tokens' => 2],
+                                'output_tokens' => 3,
+                                'output_tokens_details' => ['reasoning_tokens' => 1],
+                                'total_tokens' => 10,
+                            ],
+                        ],
+                        'generated_images' => [
+                            [
+                                'provider_response' => [
+                                    'tool_usage' => [
+                                        'image_gen' => [
+                                            'input_tokens' => 20,
+                                            'output_tokens' => 40,
+                                            'total_tokens' => 60,
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $client = new CodexClient(new CodexConfig(sessionFile: $sessionFile));
+
+        self::assertSame([
+            'input' => 12,
+            'cached_input' => 2,
+            'output' => 4,
+            'reasoning' => 1,
+            'total' => 16,
+            'image_generation_input' => 20,
+            'image_generation_output' => 40,
+            'image_generation_total' => 60,
+        ], $client->getSessionTokens()->toArray());
+    }
+
+    public function testGetSessionTokensReturnsZeroForLegacySessionWithoutUsageMetadata(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                ['role' => 'assistant', 'content' => 'legacy', 'metadata' => ['provider' => 'openai']],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $client = new CodexClient(new CodexConfig(sessionFile: $sessionFile));
+
+        self::assertSame((new CodexTokenUsage())->toArray(), $client->getSessionTokens()->toArray());
+    }
+
+    public function testGetSessionTokensThrowsForInvalidSessionFile(): void
+    {
+        $sessionFile = $this->tempDirectory . '/broken.json';
+        file_put_contents($sessionFile, '{invalid');
+
+        $client = new CodexClient(new CodexConfig(sessionFile: $sessionFile));
+
+        $this->expectException(InvalidSession::class);
+
+        $client->getSessionTokens();
     }
 
     public function testRequestUsesMutableConfigOverrides(): void

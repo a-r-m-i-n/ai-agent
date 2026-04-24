@@ -87,6 +87,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             $attachments,
         );
         $generatedImagesMetadata = [];
+        $requestAssistantMessages = [];
         $response = null;
 
         if ($sessionStore instanceof CodexSessionStore) {
@@ -98,6 +99,14 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 
             if ($sessionStore instanceof CodexSessionStore && $response->toolCalls() !== []) {
                 $session->appendAssistantMessage($response->content(), $response->toolCalls(), $response->metadata());
+            }
+
+            if ($response->toolCalls() !== []) {
+                $requestAssistantMessages[] = [
+                    'content' => $response->content(),
+                    'tool_calls' => $response->toolCalls(),
+                    'metadata' => $response->metadata(),
+                ];
             }
 
             if ($response->toolCalls() === []) {
@@ -162,6 +171,10 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 
         if ($generatedImagesMetadata !== []) {
             $metadata['generated_images'] = $generatedImagesMetadata;
+        }
+
+        if ($requestAssistantMessages !== []) {
+            $metadata['request_assistant_messages'] = $requestAssistantMessages;
         }
 
         if ($sessionStore instanceof CodexSessionStore) {

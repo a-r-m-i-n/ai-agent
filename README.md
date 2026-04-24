@@ -139,6 +139,37 @@ $client->request('Summarize this package.');
 $followUp = $client->request('Now give me the answer as three bullet points.');
 ```
 
+You can inspect token usage for the last successful request directly on the client. The returned `Armin\CodexPhp\CodexTokenUsage` object keeps normal response usage and image-generation usage separate:
+
+```php
+<?php
+
+$client = new CodexClient(new CodexConfig(
+    sessionFile: __DIR__ . '/var/codex-session.json',
+));
+
+$response = $client->request('Summarize this package.');
+$requestTokens = $client->getRequestTokens();
+$sessionTokens = $client->getSessionTokens();
+
+print_r($requestTokens->toArray());
+print_r($sessionTokens->toArray());
+```
+
+`getRequestTokens()` reports the aggregated usage of the last successful `request()` call on the current `CodexClient` instance, including intermediate model steps caused by tool calls.
+`getSessionTokens()` loads the configured session file and aggregates all archived assistant responses from that file.
+If no request has been executed yet, or no session file is configured or present, both methods return an empty usage object with all counters set to `0`.
+The `CodexTokenUsage` payload contains these stable keys:
+
+- `input`
+- `cached_input`
+- `output`
+- `reasoning`
+- `total`
+- `image_generation_input`
+- `image_generation_output`
+- `image_generation_total`
+
 ## Register and replace tools
 
 ```php
