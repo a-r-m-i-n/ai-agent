@@ -47,7 +47,8 @@ final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
             $lines[] = sprintf('- %s: %s', $tool->name(), ToolMetadata::description($tool));
         }
 
-        $lines[] = '- Local image paths referenced in the prompt are attached automatically as image input when the selected model supports it; use view_image only when you explicitly need image metadata or raw image data.';
+        $lines[] = '- Local image paths referenced in the prompt are attached automatically as image input when the selected model supports it; use view_image when the model should inspect a local image discovered during tool use.';
+        $lines[] = '- When you need to create a new image file from a prompt, use generate_image instead of write_file.';
 
         return implode("\n", $lines);
     }

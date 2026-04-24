@@ -33,9 +33,7 @@ final class LocalImageAttachment
      *     height: int,
      *     was_resized: bool,
      *     final_width: int,
-     *     final_height: int,
-     *     base64: string,
-     *     data_url: string
+     *     final_height: int
      * }
      */
     public function toPayload(): array
@@ -48,8 +46,6 @@ final class LocalImageAttachment
             'was_resized' => $this->wasResized,
             'final_width' => $this->finalWidth,
             'final_height' => $this->finalHeight,
-            'base64' => base64_encode($this->binary),
-            'data_url' => sprintf('data:%s;base64,%s', $this->mimeType, base64_encode($this->binary)),
         ];
     }
 

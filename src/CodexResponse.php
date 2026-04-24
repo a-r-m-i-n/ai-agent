@@ -7,7 +7,7 @@ namespace Armin\CodexPhp;
 final class CodexResponse
 {
     /**
-     * @param list<array{name: string, arguments: array<string, mixed>}> $toolCalls
+     * @param list<array{id?: string, name: string, arguments: array<string, mixed>}> $toolCalls
      * @param array<string, mixed> $metadata
      */
     public function __construct(
@@ -29,7 +29,7 @@ final class CodexResponse
     }
 
     /**
-     * @return list<array{name: string, arguments: array<string, mixed>}>
+     * @return list<array{id?: string, name: string, arguments: array<string, mixed>}>
      */
     public function toolCalls(): array
     {
@@ -45,10 +45,20 @@ final class CodexResponse
     }
 
     /**
+     * @return list<array<string, mixed>>
+     */
+    public function generatedImages(): array
+    {
+        $images = $this->metadata['generated_images'] ?? [];
+
+        return is_array($images) ? array_values(array_filter($images, 'is_array')) : [];
+    }
+
+    /**
      * @return array{
      *     model: string,
      *     content: string,
-     *     tool_calls: list<array{name: string, arguments: array<string, mixed>}>,
+     *     tool_calls: list<array{id?: string, name: string, arguments: array<string, mixed>}>,
      *     metadata: array<string, mixed>
      * }
      */

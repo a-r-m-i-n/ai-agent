@@ -47,6 +47,8 @@ final class CodexClientTest extends TestCase
         self::assertTrue($client->hasTool('write_file'));
         self::assertTrue($client->hasTool('run_command'));
         self::assertTrue($client->hasTool('view_image'));
+        self::assertTrue($client->hasTool('find_files'));
+        self::assertTrue($client->hasTool('generate_image'));
     }
 
     public function testApiKeyIsReadFromEnvironment(): void
@@ -181,7 +183,63 @@ final class CodexClientTest extends TestCase
         self::assertSame('File not found.', $result->payload()['error']);
     }
 
-    public function testViewImageReturnsImageMetadataAndBase64(): void
+    public function testFindFilesListsFilesInDirectory(): void
+    {
+        $client = new CodexClient();
+        $directory = $this->tempDirectory . '/files';
+        mkdir($directory, 0777, true);
+        file_put_contents($directory . '/a.php', '<?php');
+        file_put_contents($directory . '/b.txt', 'text');
+
+        $result = $client->runTool('find_files', [
+            'path' => $directory,
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame($directory, $result->payload()['path']);
+        self::assertNull($result->payload()['filter']);
+        self::assertSame(2, $result->payload()['count']);
+        self::assertSame([
+            $directory . '/a.php',
+            $directory . '/b.txt',
+        ], $result->payload()['files']);
+    }
+
+    public function testFindFilesAppliesFilterAndWorkingDirectory(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        mkdir($this->tempDirectory . '/nested', 0777, true);
+        file_put_contents($this->tempDirectory . '/nested/a.php', '<?php');
+        file_put_contents($this->tempDirectory . '/nested/b.txt', 'text');
+
+        $result = $client->runTool('find_files', [
+            'path' => 'nested',
+            'filter' => '*.php',
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame($this->tempDirectory . '/nested', $result->payload()['path']);
+        self::assertSame('*.php', $result->payload()['filter']);
+        self::assertSame(1, $result->payload()['count']);
+        self::assertSame([
+            $this->tempDirectory . '/nested/a.php',
+        ], $result->payload()['files']);
+    }
+
+    public function testFindFilesReturnsFailureForMissingDirectory(): void
+    {
+        $client = new CodexClient();
+
+        $result = $client->runTool('find_files', [
+            'path' => $this->tempDirectory . '/missing',
+        ]);
+
+        self::assertFalse($result->isSuccess());
+        self::assertSame('Directory not found.', $result->payload()['error']);
+        self::assertSame([], $result->payload()['files']);
+    }
+
+    public function testViewImageReturnsCompactImageMetadata(): void
     {
         $client = new CodexClient();
         $path = $this->tempDirectory . '/pixel.png';
@@ -197,8 +255,8 @@ final class CodexClientTest extends TestCase
         self::assertFalse($result->payload()['was_resized']);
         self::assertSame(1, $result->payload()['final_width']);
         self::assertSame(1, $result->payload()['final_height']);
-        self::assertNotSame('', $result->payload()['base64']);
-        self::assertStringStartsWith('data:image/png;base64,', $result->payload()['data_url']);
+        self::assertArrayNotHasKey('base64', $result->payload());
+        self::assertArrayNotHasKey('data_url', $result->payload());
     }
 
     public function testViewImageResolvesRelativePathsAgainstConfiguredWorkingDirectory(): void
@@ -389,6 +447,7 @@ final class CodexClientTest extends TestCase
         self::assertTrue($client->hasTool('write_file'));
         self::assertTrue($client->hasTool('run_command'));
         self::assertTrue($client->hasTool('view_image'));
+        self::assertTrue($client->hasTool('find_files'));
     }
 
     public function testRequestReturnsStructuredResponse(): void

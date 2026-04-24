@@ -71,6 +71,7 @@ final class DefaultSystemPromptBuilderTest extends TestCase
         self::assertStringContainsString('Available tools:', $prompt);
         self::assertStringContainsString('- deploy: Deploys the application to the configured environment.', $prompt);
         self::assertStringContainsString('Local image paths referenced in the prompt are attached automatically as image input', $prompt);
+        self::assertStringContainsString('use generate_image instead of write_file', $prompt);
         self::assertStringContainsString('Repository instructions:', $prompt);
         self::assertStringContainsString('# Repo Rules', $prompt);
     }

@@ -69,7 +69,7 @@ final class CodexSessionStore
             }
 
             $role = $message['role'] ?? null;
-            if (!is_string($role) || !in_array($role, ['user', 'assistant'], true)) {
+            if (!is_string($role) || !in_array($role, ['user', 'assistant', 'tool'], true)) {
                 throw InvalidSession::invalidFileStructure(sprintf('Message at index %d has an unsupported "role".', $index));
             }
 
@@ -93,6 +93,20 @@ final class CodexSessionStore
                 }
 
                 $normalizedMessage['tool_calls'] = $this->normalizeToolCalls($message['tool_calls'], $index);
+            }
+
+            if (array_key_exists('tool_call_id', $message)) {
+                if ('tool' !== $role) {
+                    throw InvalidSession::invalidFileStructure(sprintf('Only tool messages may define "tool_call_id" (index %d).', $index));
+                }
+
+                if (!is_string($message['tool_call_id']) || $message['tool_call_id'] === '') {
+                    throw InvalidSession::invalidFileStructure(sprintf('Field "tool_call_id" at index %d must be a non-empty string.', $index));
+                }
+
+                $normalizedMessage['tool_call_id'] = $message['tool_call_id'];
+            } elseif ('tool' === $role) {
+                throw InvalidSession::invalidFileStructure(sprintf('Tool message at index %d must define "tool_call_id".', $index));
             }
 
             if (array_key_exists('metadata', $message)) {
@@ -133,7 +147,7 @@ final class CodexSessionStore
 
     /**
      * @param list<mixed> $toolCalls
-     * @return list<array{name: string, arguments: array<string, mixed>}>
+     * @return list<array{id?: string, name: string, arguments: array<string, mixed>}>
      */
     private function normalizeToolCalls(array $toolCalls, int $messageIndex): array
     {
@@ -144,17 +158,24 @@ final class CodexSessionStore
                 throw InvalidSession::invalidFileStructure(sprintf('Tool call %d on message %d must be an object.', $toolIndex, $messageIndex));
             }
 
+            $id = $toolCall['id'] ?? null;
             $name = $toolCall['name'] ?? null;
             $arguments = $toolCall['arguments'] ?? null;
 
-            if (!is_string($name) || !is_array($arguments)) {
+            if (($id !== null && !is_string($id)) || !is_string($name) || !is_array($arguments)) {
                 throw InvalidSession::invalidFileStructure(sprintf('Tool call %d on message %d must define string "name" and object "arguments".', $toolIndex, $messageIndex));
             }
 
-            $normalizedToolCalls[] = [
+            $normalizedToolCall = [
                 'name' => $name,
                 'arguments' => $arguments,
             ];
+
+            if (is_string($id) && $id !== '') {
+                $normalizedToolCall['id'] = $id;
+            }
+
+            $normalizedToolCalls[] = $normalizedToolCall;
         }
 
         return $normalizedToolCalls;

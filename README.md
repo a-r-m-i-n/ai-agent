@@ -1,6 +1,6 @@
 # armin/codex-php
 
-`armin/codex-php` is a small extensible Codex client for PHP. It ships with built-in tools for reading files, writing files, and running local commands, while keeping the tool system open for consuming applications to register additional actions at runtime.
+`armin/codex-php` is a small extensible Codex client for PHP. It ships with built-in tools for reading files, finding files, writing files, viewing images, generating images, and running local commands, while keeping the tool system open for consuming applications to register additional actions at runtime.
 
 
 ## Requirements
@@ -80,6 +80,8 @@ $client = new CodexClient($config);
 ```
 
 Session files are stored as JSON objects with a versioned format and a `messages` list.
+They keep the full archived turn data, including assistant metadata such as provider-specific response details.
+For follow-up requests, only the model-relevant conversation parts are replayed from that archive: message roles, text content, and assistant tool calls.
 Existing session history is loaded before each request, and the current user prompt plus the final assistant response are appended only after a successful request.
 Invalid or incompatible session files fail fast with a clear exception instead of silently starting with an empty history.
 
@@ -106,6 +108,23 @@ $response = $client->request('Summarize this package and mention the built-in to
 
 echo $response->content();
 ```
+
+Image generation also goes through the same `request()` API. If the model decides to create a new image, it uses the internal `generate_image` tool, stores the file locally, and still returns a normal text response:
+
+```php
+<?php
+
+$response = $client->request('Create a product mockup image for a citrus soda can and save it as can-mockup.');
+
+echo $response->content();
+print_r($response->generatedImages());
+```
+
+Generated images are stored in the configured `workingDirectory`. If no `workingDirectory` is configured, the current `getcwd()` is used.
+When no explicit filename is provided, the runtime creates one like `new_image_<hash>.<ext>`.
+If the target filename has no extension, the provider output format is kept.
+If the target file already exists, it is overwritten by default; when the model sets `overwrite=false`, the runtime writes a unique alternative filename instead.
+This requires a model with Symfony AI `Capability::OUTPUT_IMAGE`; there is no automatic switch to a separate image model.
 
 To continue a multi-turn exchange, reuse the same session file:
 
@@ -168,7 +187,10 @@ $client = new CodexClient(registerBuiltins: false);
 ## Built-in tools
 
 - `read_file`
+- `find_files`
 - `write_file`
+- `view_image`
+- `generate_image`
 - `run_command`
 
 These tools are available both through `runTool()` and as callable tools during model execution.

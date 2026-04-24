@@ -8,9 +8,10 @@ final class CodexSession
 {
     /**
      * @param list<array{
-     *     role: 'user'|'assistant',
+     *     role: 'user'|'assistant'|'tool',
      *     content: string,
-     *     tool_calls?: list<array{name: string, arguments: array<string, mixed>}>,
+     *     tool_calls?: list<array{id?: string, name: string, arguments: array<string, mixed>}>,
+     *     tool_call_id?: string,
      *     metadata?: array<string, mixed>
      * }> $messages
      */
@@ -21,15 +22,48 @@ final class CodexSession
 
     /**
      * @return list<array{
-     *     role: 'user'|'assistant',
+     *     role: 'user'|'assistant'|'tool',
      *     content: string,
-     *     tool_calls?: list<array{name: string, arguments: array<string, mixed>}>,
+     *     tool_calls?: list<array{id?: string, name: string, arguments: array<string, mixed>}>,
+     *     tool_call_id?: string,
      *     metadata?: array<string, mixed>
      * }>
      */
     public function messages(): array
     {
         return $this->messages;
+    }
+
+    /**
+     * @return list<array{
+     *     role: 'user'|'assistant'|'tool',
+     *     content: string,
+     *     tool_calls?: list<array{id?: string, name: string, arguments: array<string, mixed>}>,
+     *     tool_call_id?: string
+     * }>
+     */
+    public function replayMessages(): array
+    {
+        $messages = [];
+
+        foreach ($this->messages as $message) {
+            $replayMessage = [
+                'role' => $message['role'],
+                'content' => $message['content'],
+            ];
+
+            if ('assistant' === $message['role'] && isset($message['tool_calls']) && is_array($message['tool_calls']) && $message['tool_calls'] !== []) {
+                $replayMessage['tool_calls'] = $message['tool_calls'];
+            }
+
+            if ('tool' === $message['role'] && isset($message['tool_call_id']) && is_string($message['tool_call_id'])) {
+                $replayMessage['tool_call_id'] = $message['tool_call_id'];
+            }
+
+            $messages[] = $replayMessage;
+        }
+
+        return $messages;
     }
 
     public function count(): int
@@ -46,7 +80,7 @@ final class CodexSession
     }
 
     /**
-     * @param list<array{name: string, arguments: array<string, mixed>}> $toolCalls
+     * @param list<array{id?: string, name: string, arguments: array<string, mixed>}> $toolCalls
      * @param array<string, mixed> $metadata
      */
     public function appendAssistantMessage(string $content, array $toolCalls = [], array $metadata = []): void
@@ -65,5 +99,14 @@ final class CodexSession
         }
 
         $this->messages[] = $message;
+    }
+
+    public function appendToolMessage(string $content, string $toolCallId): void
+    {
+        $this->messages[] = [
+            'role' => 'tool',
+            'content' => $content,
+            'tool_call_id' => $toolCallId,
+        ];
     }
 }

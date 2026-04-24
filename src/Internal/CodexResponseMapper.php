@@ -9,6 +9,7 @@ use Symfony\AI\Platform\Result\ChoiceResult;
 use Symfony\AI\Platform\Result\MultiPartResult;
 use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\TextResult;
 use Symfony\AI\Platform\Result\ToolCallResult;
@@ -29,6 +30,7 @@ final class CodexResponseMapper
             if ($part instanceof ToolCallResult) {
                 foreach ($part->getContent() as $toolCall) {
                     $toolCalls[] = [
+                        'id' => $toolCall->getId(),
                         'name' => $toolCall->getName(),
                         'arguments' => $toolCall->getArguments(),
                     ];
@@ -46,14 +48,26 @@ final class CodexResponseMapper
     {
         if ($result instanceof StreamResult) {
             $content = '';
+            $toolCalls = [];
 
             foreach ($result->getContent() as $delta) {
                 if ($delta instanceof TextDelta) {
                     $content .= $delta->getText();
+                    continue;
+                }
+
+                if ($delta instanceof ToolCallComplete) {
+                    $toolCalls = $delta->getToolCalls();
                 }
             }
 
-            return [new TextResult($content)];
+            $results = [new TextResult($content)];
+
+            if ($toolCalls !== []) {
+                $results[] = new ToolCallResult($toolCalls);
+            }
+
+            return $results;
         }
 
         if ($result instanceof MultiPartResult || $result instanceof ChoiceResult) {

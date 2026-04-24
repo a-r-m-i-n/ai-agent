@@ -34,7 +34,7 @@ final class ViewImageTool extends AbstractTool implements ToolInterface, SchemaA
 
     public function description(): string
     {
-        return 'Loads a local image, validates it, and returns normalized image metadata together with base64-encoded image data.';
+        return 'Loads a local image, validates it, returns compact image metadata, and signals the runtime to attach the image as real model image input in the next step.';
     }
 
     public function execute(array $input): ToolResult

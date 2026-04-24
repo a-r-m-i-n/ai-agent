@@ -15,20 +15,20 @@ use Armin\CodexPhp\Internal\Session\CodexSessionStore;
 use Symfony\AI\Platform\Bridge\Anthropic\Factory as AnthropicFactory;
 use Symfony\AI\Platform\Bridge\Gemini\Factory as GeminiFactory;
 use Armin\CodexPhp\Tool\ToolRegistry;
-use Symfony\AI\Agent\Agent;
-use Symfony\AI\Agent\InputProcessor\SystemPromptInputProcessor;
-use Symfony\AI\Agent\Toolbox\AgentProcessor;
 use Symfony\AI\Platform\Bridge\OpenAi\Factory as OpenAiFactory;
 use Symfony\AI\Platform\Capability;
 use Symfony\AI\Platform\PlatformInterface;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\Content\Image;
+use Symfony\AI\Platform\Message\ToolCallMessage;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\AI\Platform\Result\ToolCall;
 
 final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 {
+    private const MAX_TOOL_ITERATIONS = 16;
+
     public function __construct(
         private readonly CodexConfig $config,
         private readonly ToolRegistry $toolRegistry,
@@ -64,18 +64,12 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         }
 
         $toolbox = new SymfonyAiToolbox($this->toolRegistry);
-        $agentProcessor = new AgentProcessor($toolbox);
-        $agent = new Agent(
-            $platform,
-            $resolvedModel->model(),
-            [
-                new SystemPromptInputProcessor(($this->systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry))->build(), $toolbox),
-                $agentProcessor,
-            ],
-            [$agentProcessor],
+        $imageGenerator = new ImageGenerator($this->config->workingDirectory(), $this->httpClient, $resolvedAuth);
+        $messageBag = $this->createMessageBagFromSession(
+            $session,
+            ($this->systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry))->build(),
         );
-
-        $messageBag = $this->createMessageBagFromSession($session);
+        $replayedMessageCount = \count($messageBag->getMessages()) - 1;
         $messageContents = [$prompt];
         array_push(
             $messageContents,
@@ -85,30 +79,99 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             ),
         );
         $messageBag->add(Message::ofUser(...$messageContents));
-
-        $result = $agent->call(
-            $messageBag,
-            $this->buildRequestOptions($resolvedModel->provider(), $resolvedAuth),
+        $modelSupportsImageInput = $platform->getModelCatalog()->getModel($resolvedModel->model())->supports(Capability::INPUT_IMAGE);
+        $requestOptions = $this->buildRequestOptions($resolvedModel->provider(), $resolvedAuth);
+        $requestOptions['tools'] = $toolbox->getTools();
+        $attachedImagesMetadata = array_map(
+            static fn (LocalImageAttachment $attachment): array => $attachment->toMetadata(),
+            $attachments,
         );
-
-        $response = $this->responseMapper->map($resolvedModel->qualifiedName(), $result);
-        $metadata = $response->metadata();
-
-        if ($attachments !== []) {
-            $metadata['attached_images'] = array_map(
-                static fn (LocalImageAttachment $attachment): array => $attachment->toMetadata(),
-                $attachments,
-            );
-        }
+        $generatedImagesMetadata = [];
+        $response = null;
 
         if ($sessionStore instanceof CodexSessionStore) {
             $session->appendUserMessage($prompt);
+        }
+
+        for ($iteration = 0; $iteration < self::MAX_TOOL_ITERATIONS; ++$iteration) {
+            $response = $this->callModel($platform, $resolvedModel->model(), $resolvedModel->qualifiedName(), $messageBag, $requestOptions);
+
+            if ($sessionStore instanceof CodexSessionStore && $response->toolCalls() !== []) {
+                $session->appendAssistantMessage($response->content(), $response->toolCalls(), $response->metadata());
+            }
+
+            if ($response->toolCalls() === []) {
+                break;
+            }
+
+            $assistantToolCalls = array_map(
+                static fn (array $toolCall, int $toolIndex): ToolCall => new ToolCall(
+                    isset($toolCall['id']) && is_string($toolCall['id']) ? $toolCall['id'] : sprintf('runtime-%d-%d', $iteration, $toolIndex),
+                    $toolCall['name'],
+                    $toolCall['arguments'],
+                ),
+                $response->toolCalls(),
+                array_keys($response->toolCalls()),
+            );
+            $messageBag->add(Message::ofAssistant($response->content(), $assistantToolCalls));
+
+            $nextStepImages = [];
+
+            foreach ($assistantToolCalls as $toolCall) {
+                $toolResult = $this->executeToolCall($toolCall, $platform, $resolvedModel->provider(), $resolvedModel->model(), $imageGenerator);
+                $messageBag->add(Message::ofToolCall($toolCall, $toolResult['message']));
+                if ($sessionStore instanceof CodexSessionStore) {
+                    $session->appendToolMessage($toolResult['message'], $toolCall->getId());
+                }
+
+                if ($toolResult['attachment'] instanceof LocalImageAttachment) {
+                    $nextStepImages[] = $toolResult['attachment']->asImageContent();
+                    $attachedImagesMetadata[] = $toolResult['attachment']->toMetadata();
+                }
+
+                if ($toolResult['generated_image'] instanceof GeneratedImage) {
+                    $generatedImagesMetadata[] = $toolResult['generated_image']->toMetadata();
+                }
+            }
+
+            if ($nextStepImages !== []) {
+                if (!$modelSupportsImageInput) {
+                    throw ModelDoesNotSupportImageInput::forModel($resolvedModel->qualifiedName());
+                }
+
+                $messageBag->add(Message::ofUser(
+                    'Analyze the attached image input from the previous view_image tool result.',
+                    ...$nextStepImages,
+                ));
+            }
+        }
+
+        if (!$response instanceof CodexResponse) {
+            throw new \RuntimeException('The model did not return a response.');
+        }
+
+        if ($response->toolCalls() !== []) {
+            throw new \RuntimeException(sprintf('Maximum tool iterations exceeded (%d).', self::MAX_TOOL_ITERATIONS));
+        }
+
+        $metadata = $response->metadata();
+
+        if ($attachedImagesMetadata !== []) {
+            $metadata['attached_images'] = $attachedImagesMetadata;
+        }
+
+        if ($generatedImagesMetadata !== []) {
+            $metadata['generated_images'] = $generatedImagesMetadata;
+        }
+
+        if ($sessionStore instanceof CodexSessionStore) {
             $session->appendAssistantMessage($response->content(), $response->toolCalls(), $metadata);
             $sessionStore->save($session);
 
             $metadata['session'] = [
                 'file' => $sessionStore->path(),
                 'loaded_messages' => $loadedMessageCount,
+                'replayed_messages' => $replayedMessageCount,
                 'stored_messages' => $session->count(),
             ];
         }
@@ -157,13 +220,21 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         return new CodexSessionStore($sessionFile);
     }
 
-    private function createMessageBagFromSession(CodexSession $session): MessageBag
+    private function createMessageBagFromSession(CodexSession $session, string $systemPrompt): MessageBag
     {
-        $messageBag = new MessageBag();
+        $messageBag = new MessageBag(Message::forSystem($systemPrompt));
 
-        foreach ($session->messages() as $messageIndex => $message) {
+        foreach ($session->replayMessages() as $messageIndex => $message) {
             if ('user' === $message['role']) {
                 $messageBag->add(Message::ofUser($message['content']));
+                continue;
+            }
+
+            if ('tool' === $message['role']) {
+                $messageBag->add(new ToolCallMessage(
+                    new ToolCall($message['tool_call_id'], 'session_tool_output', []),
+                    $message['content'],
+                ));
                 continue;
             }
 
@@ -171,7 +242,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
                 $message['content'],
                 array_map(
                     static fn (array $toolCall, int $toolIndex): ToolCall => new ToolCall(
-                        sprintf('session-%d-%d', $messageIndex, $toolIndex),
+                        isset($toolCall['id']) && is_string($toolCall['id']) ? $toolCall['id'] : sprintf('session-%d-%d', $messageIndex, $toolIndex),
                         $toolCall['name'],
                         $toolCall['arguments'],
                     ),
@@ -182,5 +253,89 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         }
 
         return $messageBag;
+    }
+
+    /**
+     * @param array<string, mixed> $requestOptions
+     */
+    private function callModel(
+        PlatformInterface $platform,
+        string $model,
+        string $qualifiedModel,
+        MessageBag $messageBag,
+        array $requestOptions,
+    ): CodexResponse {
+        return $this->responseMapper->map(
+            $qualifiedModel,
+            $platform->invoke($model, $messageBag, $requestOptions)->getResult(),
+        );
+    }
+
+    /**
+     * @return array{message: string, attachment: ?LocalImageAttachment, generated_image: ?GeneratedImage}
+     */
+    private function executeToolCall(
+        ToolCall $toolCall,
+        PlatformInterface $platform,
+        string $provider,
+        string $model,
+        ImageGenerator $imageGenerator,
+    ): array
+    {
+        try {
+            $attachment = null;
+            $generatedImage = null;
+
+            if ($toolCall->getName() === 'generate_image') {
+                $generatedImage = $imageGenerator->generate($platform, $provider, $model, $toolCall->getArguments());
+                $payload = [
+                    'success' => true,
+                    'payload' => $generatedImage->toMetadata(),
+                ];
+            } else {
+                $result = $this->toolRegistry->get($toolCall->getName())->execute($toolCall->getArguments());
+                $payload = [
+                    'success' => $result->isSuccess(),
+                    'payload' => $result->payload(),
+                ];
+            }
+
+            if (
+                $toolCall->getName() === 'view_image'
+                && isset($result)
+                && $result->isSuccess()
+                && isset($result->payload()['path'])
+                && is_string($result->payload()['path'])
+            ) {
+                $attachment = ($this->imageAttachmentResolver ?? new LocalImageAttachmentResolver($this->config->workingDirectory()))
+                    ->resolve($result->payload()['path']);
+            }
+        } catch (\Throwable $e) {
+            if ($toolCall->getName() === 'generate_image') {
+                throw $e;
+            }
+
+            $payload = [
+                'success' => false,
+                'payload' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+            $attachment = null;
+            $generatedImage = null;
+        }
+
+        try {
+            $message = json_encode($payload, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            $message = '{"success":false,"payload":{"error":"Tool result could not be encoded as JSON."}}';
+            $attachment = null;
+        }
+
+        return [
+            'message' => $message,
+            'attachment' => $attachment,
+            'generated_image' => $generatedImage,
+        ];
     }
 }

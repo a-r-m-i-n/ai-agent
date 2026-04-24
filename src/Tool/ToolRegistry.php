@@ -8,6 +8,8 @@ use Armin\CodexPhp\Tool\Builtin\ReadFileTool;
 use Armin\CodexPhp\Tool\Builtin\RunCommandTool;
 use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
 use Armin\CodexPhp\Tool\Builtin\WriteFileTool;
+use Armin\CodexPhp\Tool\Builtin\FindFilesTool;
+use Armin\CodexPhp\Tool\Builtin\GenerateImageTool;
 use Armin\CodexPhp\Exception\ToolNotFound;
 
 final class ToolRegistry
@@ -62,5 +64,7 @@ final class ToolRegistry
         $this->register(new WriteFileTool($workingDirectory));
         $this->register(new RunCommandTool($workingDirectory));
         $this->register(new ViewImageTool($workingDirectory));
+        $this->register(new FindFilesTool($workingDirectory));
+        $this->register(new GenerateImageTool($workingDirectory));
     }
 }

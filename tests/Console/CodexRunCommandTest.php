@@ -82,6 +82,7 @@ final class CodexRunCommandTest extends TestCase
         self::assertSame('Hello from Codex', $payload['content']);
         self::assertSame('read_file', $payload['tool_calls'][0]['name']);
         self::assertSame('openai', $payload['metadata']['provider']);
+        self::assertArrayHasKey('session', $payload);
     }
 
     public function testSessionFileOptionMutatesConfigBeforeClientRequest(): void
