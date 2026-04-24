@@ -10,9 +10,6 @@ use Armin\CodexPhp\Internal\CodexRuntimeInterface;
 use Armin\CodexPhp\Internal\DefaultSystemPromptBuilder;
 use Armin\CodexPhp\Internal\SystemPromptBuilderInterface;
 use Armin\CodexPhp\Internal\SymfonyAiCodexRuntime;
-use Armin\CodexPhp\Tool\Builtin\ReadFileTool;
-use Armin\CodexPhp\Tool\Builtin\RunCommandTool;
-use Armin\CodexPhp\Tool\Builtin\WriteFileTool;
 use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolRegistry;
 use Armin\CodexPhp\Tool\ToolResult;
@@ -31,10 +28,12 @@ final class CodexClient
         ?CodexRuntimeInterface $runtime = null,
         ?SystemPromptBuilderInterface $systemPromptBuilder = null,
     ) {
-        $this->toolRegistry = $toolRegistry ?? new ToolRegistry();
+        $this->toolRegistry = $toolRegistry ?? ($registerBuiltins
+            ? ToolRegistry::withBuiltins($this->config->workingDirectory())
+            : new ToolRegistry());
 
-        if ($registerBuiltins) {
-            $this->registerBuiltins();
+        if ($toolRegistry instanceof ToolRegistry && $registerBuiltins) {
+            $this->toolRegistry->registerBuiltins($this->config->workingDirectory());
         }
 
         $this->runtime = $runtime ?? new SymfonyAiCodexRuntime(
@@ -63,6 +62,13 @@ final class CodexClient
     public function registerTool(ToolInterface $tool): self
     {
         $this->toolRegistry->register($tool);
+
+        return $this;
+    }
+
+    public function unregisterTool(string $name): self
+    {
+        $this->toolRegistry->unregister($name);
 
         return $this;
     }
@@ -96,12 +102,5 @@ final class CodexClient
     public function tools(): array
     {
         return $this->toolRegistry->all();
-    }
-
-    private function registerBuiltins(): void
-    {
-        $this->registerTool(new ReadFileTool($this->config->workingDirectory()));
-        $this->registerTool(new WriteFileTool($this->config->workingDirectory()));
-        $this->registerTool(new RunCommandTool($this->config->workingDirectory()));
     }
 }

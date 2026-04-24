@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Armin\CodexPhp\Tool;
 
+use Armin\CodexPhp\Tool\Builtin\ReadFileTool;
+use Armin\CodexPhp\Tool\Builtin\RunCommandTool;
+use Armin\CodexPhp\Tool\Builtin\WriteFileTool;
 use Armin\CodexPhp\Exception\ToolNotFound;
 
 final class ToolRegistry
@@ -13,9 +16,22 @@ final class ToolRegistry
      */
     private array $tools = [];
 
+    public static function withBuiltins(?string $workingDirectory = null): self
+    {
+        $registry = new self();
+        $registry->registerBuiltins($workingDirectory);
+
+        return $registry;
+    }
+
     public function register(ToolInterface $tool): void
     {
         $this->tools[$tool->name()] = $tool;
+    }
+
+    public function unregister(string $name): void
+    {
+        unset($this->tools[$name]);
     }
 
     public function has(string $name): bool
@@ -37,5 +53,12 @@ final class ToolRegistry
     public function all(): array
     {
         return $this->tools;
+    }
+
+    public function registerBuiltins(?string $workingDirectory = null): void
+    {
+        $this->register(new ReadFileTool($workingDirectory));
+        $this->register(new WriteFileTool($workingDirectory));
+        $this->register(new RunCommandTool($workingDirectory));
     }
 }

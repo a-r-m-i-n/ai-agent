@@ -80,7 +80,7 @@ $response = $client->request('Summarize this package and mention the built-in to
 echo $response->content();
 ```
 
-## Register a custom tool
+## Register and replace tools
 
 ```php
 <?php
@@ -108,6 +108,23 @@ $client->registerTool(new EchoTool());
 
 If a custom tool should be explained clearly to the model, implement `Armin\CodexPhp\Tool\ToolDescriptionInterface` as well. That description is used both for the generated system prompt and for the provider tool definition.
 
+Built-in tools are registered by default through the `ToolRegistry`. You can remove them and replace them with your own implementations:
+
+```php
+<?php
+
+$client->unregisterTool('read_file');
+$client->registerTool(new CustomReadFileTool());
+```
+
+If you want to start without built-in tools at all, disable them in the client constructor:
+
+```php
+<?php
+
+$client = new CodexClient(registerBuiltins: false);
+```
+
 ## Built-in tools
 
 - `read_file`
@@ -116,6 +133,7 @@ If a custom tool should be explained clearly to the model, implement `Armin\Code
 
 These tools are available both through `runTool()` and as callable tools during model execution.
 Their descriptions are also included automatically in the generated system prompt.
+They are part of the default `ToolRegistry`, so applications can unregister individual built-ins or override them with tools using the same name.
 
 ## CLI
 

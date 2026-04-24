@@ -14,6 +14,7 @@ use Armin\CodexPhp\Exception\ToolNotFound;
 use Armin\CodexPhp\Internal\CodexRuntimeInterface;
 use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolInterface;
+use Armin\CodexPhp\Tool\ToolRegistry;
 use Armin\CodexPhp\Tool\ToolResult;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -244,6 +245,50 @@ final class CodexClientTest extends TestCase
 
         self::assertTrue($result->isSuccess());
         self::assertSame('TEST', $result->payload()['value']);
+    }
+
+    public function testBuiltinToolCanBeUnregistered(): void
+    {
+        $client = new CodexClient();
+        $client->unregisterTool('read_file');
+
+        self::assertFalse($client->hasTool('read_file'));
+    }
+
+    public function testBuiltinToolCanBeReplaced(): void
+    {
+        $client = new CodexClient();
+        $client
+            ->unregisterTool('read_file')
+            ->registerTool(new class implements ToolInterface {
+                public function name(): string
+                {
+                    return 'read_file';
+                }
+
+                public function execute(array $input): ToolResult
+                {
+                    return ToolResult::success([
+                        'path' => $input['path'] ?? null,
+                        'contents' => 'custom',
+                    ]);
+                }
+            });
+
+        $result = $client->runTool('read_file', ['path' => 'example.txt']);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame('custom', $result->payload()['contents']);
+    }
+
+    public function testProvidedRegistryGetsBuiltinDefaultsThroughRegistryApi(): void
+    {
+        $registry = new ToolRegistry();
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory), $registry);
+
+        self::assertTrue($client->hasTool('read_file'));
+        self::assertTrue($client->hasTool('write_file'));
+        self::assertTrue($client->hasTool('run_command'));
     }
 
     public function testRequestReturnsStructuredResponse(): void
