@@ -15,6 +15,7 @@ final class CodexConfig
         private ?string $apiKey = null,
         private ?string $model = null,
         private ?CodexAuth $auth = null,
+        private ?string $sessionFile = null,
         private readonly ?string $workingDirectory = null,
         private readonly ?string $systemPrompt = null,
         private readonly string $systemPromptMode = 'append',
@@ -90,6 +91,22 @@ final class CodexConfig
     public function setAuth(?CodexAuth $auth): self
     {
         $this->auth = $auth;
+
+        return $this;
+    }
+
+    public function sessionFile(): ?string
+    {
+        if ($this->sessionFile === null || $this->sessionFile === '') {
+            return null;
+        }
+
+        return $this->sessionFile;
+    }
+
+    public function setSessionFile(?string $sessionFile): self
+    {
+        $this->sessionFile = $sessionFile;
 
         return $this;
     }

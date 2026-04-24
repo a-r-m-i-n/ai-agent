@@ -6,6 +6,7 @@ namespace Armin\CodexPhp\Tests\Internal;
 
 use Armin\CodexPhp\Auth\CodexAuth;
 use Armin\CodexPhp\CodexConfig;
+use Armin\CodexPhp\Exception\InvalidSession;
 use Armin\CodexPhp\Exception\ModelDoesNotSupportImageInput;
 use Armin\CodexPhp\Internal\SymfonyAiCodexRuntime;
 use Armin\CodexPhp\Tool\ToolRegistry;
@@ -148,12 +149,103 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         $runtime->request('Beschreibe image.png');
     }
 
-    private function createRuntime(array $capabilities, object $holder, string|false|null $workingDirectory = false): SymfonyAiCodexRuntime
+    public function testExistingSessionMessagesAreLoadedBeforeCurrentPrompt(): void
     {
-        $platform = new class($capabilities, $holder) implements PlatformInterface {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                ['role' => 'user', 'content' => 'Earlier user question'],
+                [
+                    'role' => 'assistant',
+                    'content' => 'Earlier assistant answer',
+                    'tool_calls' => [
+                        ['name' => 'read_file', 'arguments' => ['path' => 'composer.json']],
+                    ],
+                    'metadata' => ['provider' => 'openai'],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $holder = (object) ['input' => null];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            sessionFile: $sessionFile,
+        );
+
+        $response = $runtime->request('Current prompt');
+
+        self::assertInstanceOf(MessageBag::class, $holder->input);
+        $messages = $holder->input->getMessages();
+        self::assertCount(4, $messages);
+        self::assertSame('Earlier user question', $messages[1]->asText());
+        self::assertSame('Earlier assistant answer', $messages[2]->getContent());
+        self::assertTrue($messages[2]->hasToolCalls());
+        self::assertSame('Current prompt', $messages[3]->asText());
+        self::assertSame($sessionFile, $response->metadata()['session']['file']);
+        self::assertSame(2, $response->metadata()['session']['loaded_messages']);
+        self::assertSame(4, $response->metadata()['session']['stored_messages']);
+    }
+
+    public function testSuccessfulRequestCreatesOrUpdatesSessionFile(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        $holder = (object) ['input' => null];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            sessionFile: $sessionFile,
+            metadata: ['provider' => 'test', 'final_response' => ['id' => 'resp_1']],
+        );
+
+        self::assertFileDoesNotExist($sessionFile);
+
+        $runtime->request('Persist this prompt');
+
+        self::assertFileExists($sessionFile);
+        $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
+
+        self::assertSame(1, $payload['version']);
+        self::assertCount(2, $payload['messages']);
+        self::assertSame(['role' => 'user', 'content' => 'Persist this prompt'], $payload['messages'][0]);
+        self::assertSame('assistant', $payload['messages'][1]['role']);
+        self::assertSame('ok', $payload['messages'][1]['content']);
+        self::assertSame('test', $payload['messages'][1]['metadata']['provider']);
+        self::assertSame('resp_1', $payload['messages'][1]['metadata']['final_response']['id']);
+    }
+
+    public function testInvalidSessionFileThrowsClearException(): void
+    {
+        $sessionFile = $this->tempDirectory . '/broken.json';
+        file_put_contents($sessionFile, '{invalid');
+
+        $holder = (object) ['input' => null];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            sessionFile: $sessionFile,
+        );
+
+        $this->expectException(InvalidSession::class);
+        $this->expectExceptionMessage('must contain valid JSON');
+
+        $runtime->request('Current prompt');
+    }
+
+    private function createRuntime(
+        array $capabilities,
+        object $holder,
+        string|false|null $workingDirectory = false,
+        ?string $sessionFile = null,
+        array $metadata = ['provider' => 'test'],
+    ): SymfonyAiCodexRuntime
+    {
+        $platform = new class($capabilities, $holder, $metadata) implements PlatformInterface {
             public function __construct(
                 private readonly array $capabilities,
                 private readonly object $holder,
+                private readonly array $metadata,
             ) {
             }
 
@@ -162,7 +254,12 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
                 $this->holder->input = $input;
 
                 return new DeferredResult(
-                    new class implements ResultConverterInterface {
+                    new class($this->metadata) implements ResultConverterInterface {
+                        public function __construct(
+                            private readonly array $metadata,
+                        ) {
+                        }
+
                         public function supports(Model $model): bool
                         {
                             return true;
@@ -171,7 +268,9 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
                         public function convert(RawResultInterface $result, array $options = []): TextResult
                         {
                             $textResult = new TextResult('ok');
-                            $textResult->getMetadata()->add('provider', 'test');
+                            foreach ($this->metadata as $key => $value) {
+                                $textResult->getMetadata()->add($key, $value);
+                            }
 
                             return $textResult;
                         }
@@ -225,6 +324,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
             new CodexConfig(
                 model: 'openai:gpt-5.4-mini',
                 auth: new CodexAuth(authMode: CodexAuth::MODE_API_KEY, apiKey: 'test-key'),
+                sessionFile: $sessionFile,
                 workingDirectory: $workingDirectory === false ? $this->tempDirectory : $workingDirectory,
             ),
             new ToolRegistry(),

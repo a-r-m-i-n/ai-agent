@@ -85,11 +85,13 @@ final class CodexClientTest extends TestCase
     public function testConfigExposesWorkingDirectoryAndSystemPromptSettings(): void
     {
         $config = new CodexConfig(
+            sessionFile: $this->tempDirectory . '/session.json',
             workingDirectory: $this->tempDirectory,
             systemPrompt: 'Answer tersely.',
             systemPromptMode: 'replace',
         );
 
+        self::assertSame($this->tempDirectory . '/session.json', $config->sessionFile());
         self::assertSame($this->tempDirectory, $config->workingDirectory());
         self::assertSame('Answer tersely.', $config->systemPrompt());
         self::assertSame('replace', $config->systemPromptMode());
@@ -433,10 +435,12 @@ final class CodexClientTest extends TestCase
         $config = new CodexConfig();
         $config
             ->setModel('openai:gpt-5.1')
-            ->setApiKey('secret');
+            ->setApiKey('secret')
+            ->setSessionFile($this->tempDirectory . '/session.json');
 
         self::assertSame('openai:gpt-5.1', $config->model());
         self::assertSame('secret', $config->apiKey());
+        self::assertSame($this->tempDirectory . '/session.json', $config->sessionFile());
     }
 
     public function testOpenAiTokenModeExecutesToolCallsThroughAgentLoop(): void

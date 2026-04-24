@@ -37,6 +37,7 @@ final class CodexRunCommand extends Command
             ->addOption('model', null, InputOption::VALUE_REQUIRED, 'The model to use.')
             ->addOption('key', null, InputOption::VALUE_REQUIRED, 'The API key to use.')
             ->addOption('auth-file', null, InputOption::VALUE_REQUIRED, 'Path to an auth.json file.')
+            ->addOption('session-file', null, InputOption::VALUE_REQUIRED, 'Path to a JSON file used to persist session history.')
             ->addOption('debug', null, InputOption::VALUE_NONE, 'Output debug JSON with the prompt, response content, metadata, and tool calls.')
             ->addOption('debug-all', null, InputOption::VALUE_NONE, 'Output the final provider response together with all parsed stream events when available.');
     }
@@ -50,6 +51,7 @@ final class CodexRunCommand extends Command
         $modelOption = $input->getOption('model');
         $keyOption = $input->getOption('key');
         $authFileOption = $input->getOption('auth-file');
+        $sessionFileOption = $input->getOption('session-file');
         $debug = (bool) $input->getOption('debug');
         $debugAll = (bool) $input->getOption('debug-all');
         $auth = is_string($authFileOption) && $authFileOption !== ''
@@ -62,6 +64,7 @@ final class CodexRunCommand extends Command
                 apiKey: $this->config->apiKey(),
                 model: $this->config->model(),
                 auth: $auth,
+                sessionFile: $this->config->sessionFile(),
                 workingDirectory: $this->config->workingDirectory(),
                 systemPrompt: $this->config->systemPrompt(),
                 systemPromptMode: $this->config->systemPromptMode(),
@@ -73,6 +76,10 @@ final class CodexRunCommand extends Command
 
         if (is_string($keyOption) && $keyOption !== '') {
             $config->setApiKey($keyOption);
+        }
+
+        if (is_string($sessionFileOption) && $sessionFileOption !== '') {
+            $config->setSessionFile($sessionFileOption);
         }
 
         $model = $config->model();
@@ -103,6 +110,8 @@ final class CodexRunCommand extends Command
                 'model' => $response->model(),
                 'model_source' => $modelSource,
                 'api_key_source' => $keySource,
+                'session_file' => $config->sessionFile(),
+                'session' => $response->metadata()['session'] ?? null,
                 'content' => $response->content(),
                 'tool_calls' => $response->toolCalls(),
                 'metadata' => $response->metadata(),

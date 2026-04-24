@@ -10,6 +10,8 @@ use Armin\CodexPhp\CodexResponse;
 use Armin\CodexPhp\Exception\ModelDoesNotSupportImageInput;
 use Armin\CodexPhp\Exception\MissingModel;
 use Armin\CodexPhp\Internal\Provider\TokenPlatformFactory;
+use Armin\CodexPhp\Internal\Session\CodexSession;
+use Armin\CodexPhp\Internal\Session\CodexSessionStore;
 use Symfony\AI\Platform\Bridge\Anthropic\Factory as AnthropicFactory;
 use Symfony\AI\Platform\Bridge\Gemini\Factory as GeminiFactory;
 use Armin\CodexPhp\Tool\ToolRegistry;
@@ -23,6 +25,7 @@ use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\Content\Image;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\AI\Platform\Result\ToolCall;
 
 final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 {
@@ -52,6 +55,9 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         $platform = $this->platform ?? $this->createPlatform($resolvedModel->provider(), $resolvedAuth);
         $attachments = ($this->imageAttachmentResolver ?? new LocalImageAttachmentResolver($this->config->workingDirectory()))
             ->detectFromPrompt($prompt);
+        $sessionStore = $this->createSessionStore();
+        $session = $sessionStore?->load() ?? new CodexSession();
+        $loadedMessageCount = $session->count();
 
         if ($attachments !== [] && !$platform->getModelCatalog()->getModel($resolvedModel->model())->supports(Capability::INPUT_IMAGE)) {
             throw ModelDoesNotSupportImageInput::forModel($resolvedModel->qualifiedName());
@@ -69,6 +75,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             [$agentProcessor],
         );
 
+        $messageBag = $this->createMessageBagFromSession($session);
         $messageContents = [$prompt];
         array_push(
             $messageContents,
@@ -77,9 +84,10 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
                 $attachments,
             ),
         );
+        $messageBag->add(Message::ofUser(...$messageContents));
 
         $result = $agent->call(
-            new MessageBag(Message::ofUser(...$messageContents)),
+            $messageBag,
             $this->buildRequestOptions($resolvedModel->provider(), $resolvedAuth),
         );
 
@@ -91,6 +99,18 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
                 static fn (LocalImageAttachment $attachment): array => $attachment->toMetadata(),
                 $attachments,
             );
+        }
+
+        if ($sessionStore instanceof CodexSessionStore) {
+            $session->appendUserMessage($prompt);
+            $session->appendAssistantMessage($response->content(), $response->toolCalls(), $metadata);
+            $sessionStore->save($session);
+
+            $metadata['session'] = [
+                'file' => $sessionStore->path(),
+                'loaded_messages' => $loadedMessageCount,
+                'stored_messages' => $session->count(),
+            ];
         }
 
         return new CodexResponse(
@@ -124,5 +144,43 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         }
 
         return [];
+    }
+
+    private function createSessionStore(): ?CodexSessionStore
+    {
+        $sessionFile = $this->config->sessionFile();
+
+        if ($sessionFile === null) {
+            return null;
+        }
+
+        return new CodexSessionStore($sessionFile);
+    }
+
+    private function createMessageBagFromSession(CodexSession $session): MessageBag
+    {
+        $messageBag = new MessageBag();
+
+        foreach ($session->messages() as $messageIndex => $message) {
+            if ('user' === $message['role']) {
+                $messageBag->add(Message::ofUser($message['content']));
+                continue;
+            }
+
+            $messageBag->add(Message::ofAssistant(
+                $message['content'],
+                array_map(
+                    static fn (array $toolCall, int $toolIndex): ToolCall => new ToolCall(
+                        sprintf('session-%d-%d', $messageIndex, $toolIndex),
+                        $toolCall['name'],
+                        $toolCall['arguments'],
+                    ),
+                    $message['tool_calls'] ?? [],
+                    array_keys($message['tool_calls'] ?? []),
+                ),
+            ));
+        }
+
+        return $messageBag;
     }
 }

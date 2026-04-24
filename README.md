@@ -30,6 +30,7 @@ export CODEX_DEFAULT_MODEL=openai:gpt-5
 ```
 
 You can also set a `workingDirectory` for relative file/command operations and customize how the system prompt is built.
+If you want to persist conversation history across requests, you can additionally configure a `sessionFile`.
 
 You can also provide auth data as a PHP object or load it from an `auth.json` file:
 
@@ -54,6 +55,7 @@ use Armin\CodexPhp\CodexClient;
 use Armin\CodexPhp\CodexConfig;
 
 $client = new CodexClient(new CodexConfig(
+    sessionFile: __DIR__ . '/var/codex-session.json',
     workingDirectory: __DIR__,
     systemPrompt: 'Prefer short explanations and always mention potential risks.',
     systemPromptMode: 'append', // or "replace"
@@ -71,10 +73,15 @@ use Armin\CodexPhp\CodexConfig;
 $config = new CodexConfig();
 $config
     ->setModel('openai:gpt-5.4-mini')
-    ->setApiKey('your-key');
+    ->setApiKey('your-key')
+    ->setSessionFile(__DIR__ . '/var/codex-session.json');
 
 $client = new CodexClient($config);
 ```
+
+Session files are stored as JSON objects with a versioned format and a `messages` list.
+Existing session history is loaded before each request, and the current user prompt plus the final assistant response are appended only after a successful request.
+Invalid or incompatible session files fail fast with a clear exception instead of silently starting with an empty history.
 
 When `workingDirectory` is set, the built-in file tools resolve relative paths against it, `run_command` uses it as the default `cwd`, and `AGENTS.md` from that directory is automatically appended to the generated system prompt when present.
 
@@ -98,6 +105,19 @@ $client = new CodexClient(new CodexConfig());
 $response = $client->request('Summarize this package and mention the built-in tools.');
 
 echo $response->content();
+```
+
+To continue a multi-turn exchange, reuse the same session file:
+
+```php
+<?php
+
+$client = new CodexClient(new CodexConfig(
+    sessionFile: __DIR__ . '/var/codex-session.json',
+));
+
+$client->request('Summarize this package.');
+$followUp = $client->request('Now give me the answer as three bullet points.');
 ```
 
 ## Register and replace tools
@@ -174,6 +194,7 @@ CLI options:
 - `--model` overrides `CODEX_DEFAULT_MODEL`
 - `--key` overrides `CODEX_API_KEY`
 - `--auth-file` loads credentials from an `auth.json` file
+- `--session-file` persists and reloads conversation history from a JSON file
 
 Internally, the CLI applies `--model` and `--key` by updating the `CodexConfig` instance before the request is executed.
 
@@ -183,6 +204,13 @@ Example with `auth.json`:
 
 ```bash
 vendor/bin/codex "Summarize this repository" --model=openai:gpt-5.4-nano --auth-file=./auth.json
+```
+
+Example with a reusable session file:
+
+```bash
+vendor/bin/codex "Summarize this repository" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session-file=.codex-session.json
+vendor/bin/codex "Now answer in German" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session-file=.codex-session.json
 ```
 
 Example `auth.json`:
@@ -219,4 +247,4 @@ vendor/bin/codex "Summarize this repository" --model=gemini:gemini-2.5-flash-lit
 
 - Authentication is intentionally out of scope for this package.
 - Requests are executed through Symfony AI provider bridges for OpenAI, Anthropic, and Gemini.
-- The current CLI mode is non-interactive and single-turn.
+- The CLI mode is non-interactive. Use `--session-file` if you want multi-turn history between invocations.

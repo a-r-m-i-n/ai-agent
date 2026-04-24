@@ -62,11 +62,14 @@ final class CodexRunCommandTest extends TestCase
     {
         putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
         putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        $this->temporaryFiles[] = $sessionFile;
 
         $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
             '--debug' => true,
+            '--session-file' => $sessionFile,
         ]);
 
         $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
@@ -75,9 +78,46 @@ final class CodexRunCommandTest extends TestCase
         self::assertSame('openai:gpt-5', $payload['model']);
         self::assertSame('env', $payload['model_source']);
         self::assertSame('env', $payload['api_key_source']);
+        self::assertSame($sessionFile, $payload['session_file']);
         self::assertSame('Hello from Codex', $payload['content']);
         self::assertSame('read_file', $payload['tool_calls'][0]['name']);
         self::assertSame('openai', $payload['metadata']['provider']);
+    }
+
+    public function testSessionFileOptionMutatesConfigBeforeClientRequest(): void
+    {
+        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        $config = new CodexConfig();
+        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        $this->temporaryFiles[] = $sessionFile;
+        $client = new CodexClient($config, runtime: new class($config) implements CodexRuntimeInterface {
+            public function __construct(
+                private readonly CodexConfig $config,
+            ) {
+            }
+
+            public function request(string $prompt): CodexResponse
+            {
+                return new CodexResponse(
+                    content: 'Hello from Codex',
+                    model: 'openai:gpt-5',
+                    metadata: ['session_file_seen' => $this->config->sessionFile()],
+                );
+            }
+        });
+
+        $tester = new CommandTester(new CodexRunCommand(config: $config, client: $client));
+        $tester->execute([
+            'prompt' => 'Say hello',
+            '--debug' => true,
+            '--session-file' => $sessionFile,
+        ]);
+
+        $payload = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
+
+        self::assertSame($sessionFile, $config->sessionFile());
+        self::assertSame($sessionFile, $payload['metadata']['session_file_seen']);
     }
 
     public function testDebugAllOutputsFinalResponseAndStreamEvents(): void
