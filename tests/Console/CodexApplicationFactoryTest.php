@@ -9,6 +9,7 @@ use Armin\CodexPhp\CodexResponse;
 use Armin\CodexPhp\Console\CodexRunCommand;
 use Armin\CodexPhp\Console\CodexApplicationFactory;
 use Armin\CodexPhp\Internal\CodexRuntimeInterface;
+use ReflectionProperty;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -42,5 +43,18 @@ final class CodexApplicationFactoryTest extends TestCase
         self::assertTrue($application->has('codex'));
         self::assertSame(0, $exitCode);
         self::assertSame("Factory test response\n", $output->fetch());
+    }
+
+    public function testApplicationFactorySetsCurrentWorkingDirectoryOnDefaultCommand(): void
+    {
+        $application = CodexApplicationFactory::create();
+        $command = $application->find('codex');
+        $property = new ReflectionProperty($command, 'config');
+
+        /** @var mixed $config */
+        $config = $property->getValue($command);
+
+        self::assertInstanceOf(\Armin\CodexPhp\CodexConfig::class, $config);
+        self::assertSame(getcwd(), $config->workingDirectory());
     }
 }

@@ -28,8 +28,10 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(name: 'codex')]
 final class CodexRunCommand extends Command
 {
+    private readonly CodexConfig $config;
+
     public function __construct(
-        private readonly CodexConfig $config = new CodexConfig(),
+        ?CodexConfig $config = null,
         private readonly ?CodexClient $client = null,
         private readonly CodexAuthFileLoader $authFileLoader = new CodexAuthFileLoader(),
         private readonly AuthResolver $authResolver = new AuthResolver(),
@@ -37,6 +39,8 @@ final class CodexRunCommand extends Command
         private readonly ContextUsageFormatter $contextUsageFormatter = new ContextUsageFormatter(),
         private readonly TokenCostCalculator $tokenCostCalculator = new TokenCostCalculator(),
     ) {
+        $this->config = $config ?? $this->createDefaultConfig();
+
         parent::__construct();
     }
 
@@ -88,23 +92,24 @@ final class CodexRunCommand extends Command
             $config->setSessionFile($sessionFileOption);
         }
 
-        $model = $config->model();
-        $this->authResolver->resolve($config);
+        $effectiveConfig = $this->withDefaultWorkingDirectory($config);
+        $model = $effectiveConfig->model();
+        $this->authResolver->resolve($effectiveConfig);
 
         if ($model === null) {
-            throw MissingModel::forEnvVar($config->modelEnvVar());
+            throw MissingModel::forEnvVar($effectiveConfig->modelEnvVar());
         }
 
         if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE) {
             $io->writeln('<fg=gray>System prompt:</>');
-            $this->writeDiagnosticBlock($io, $this->buildSystemPrompt($config));
+            $this->writeDiagnosticBlock($io, $this->buildSystemPrompt($effectiveConfig));
             $io->newLine();
             $io->writeln('<fg=gray>User prompt:</>');
             $this->writeDiagnosticBlock($io, $prompt);
             $io->newLine();
         }
 
-        $client = $this->client ?? new CodexClient($config);
+        $client = $this->client ?? new CodexClient($effectiveConfig);
         $response = $client->request($prompt);
 
         if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE) {
@@ -144,6 +149,42 @@ final class CodexRunCommand extends Command
             $config,
             ToolRegistry::withBuiltins($config->workingDirectory()),
         ))->build();
+    }
+
+    private function createDefaultConfig(): CodexConfig
+    {
+        $workingDirectory = getcwd();
+
+        if (!is_string($workingDirectory) || $workingDirectory === '') {
+            return new CodexConfig();
+        }
+
+        return new CodexConfig(
+            workingDirectory: $workingDirectory,
+        );
+    }
+
+    private function withDefaultWorkingDirectory(CodexConfig $config): CodexConfig
+    {
+        if ($config->workingDirectory() !== null) {
+            return $config;
+        }
+
+        $workingDirectory = getcwd();
+
+        if (!is_string($workingDirectory) || $workingDirectory === '') {
+            return $config;
+        }
+
+        return new CodexConfig(
+            apiKey: $config->apiKey(),
+            model: $config->model(),
+            auth: $config->auth(),
+            sessionFile: $config->sessionFile(),
+            workingDirectory: $workingDirectory,
+            systemPrompt: $config->systemPrompt(),
+            systemPromptMode: $config->systemPromptMode(),
+        );
     }
 
     private function writeDiagnosticBlock(SymfonyStyle $io, string $content): void

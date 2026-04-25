@@ -145,6 +145,8 @@ final class CodexRunCommandTest extends TestCase
 
         self::assertStringContainsString('System prompt:', $display);
         self::assertStringContainsString('Available tools:', $display);
+        self::assertStringContainsString('Repository context:', $display);
+        self::assertStringContainsString('Working directory: ' . getcwd(), $display);
         self::assertStringContainsString('User prompt:', $display);
         self::assertStringContainsString('Say hello', $display);
         self::assertStringContainsString('Output:', $display);
@@ -194,6 +196,7 @@ final class CodexRunCommandTest extends TestCase
         self::assertLessThan($outputPosition, $userPromptPosition);
         self::assertLessThan($tablePosition, $outputPosition);
         self::assertStringContainsString('Available tools:', $display);
+        self::assertStringContainsString('Repository context:', $display);
         self::assertStringContainsString('tool_call_details', $display);
     }
 
