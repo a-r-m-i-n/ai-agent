@@ -62,12 +62,25 @@ final class CodexTokenUsageExtractor
         $normalUsage = is_array($usage['usage'] ?? null) ? $usage['usage'] : [];
         $imageUsage = $this->extractImageGenerationUsage($metadata['generated_images'] ?? []);
         $toolCallUsage = $this->extractToolCallUsage($toolCalls);
+        $input = $this->readInt($normalUsage, 'input_tokens', 'promptTokenCount');
+        $cachedInput = $this->readNestedInt($normalUsage, ['input_tokens_details', 'cached_tokens']);
+        if ($cachedInput === 0) {
+            $cachedInput = $this->readInt($normalUsage, 'cachedContentTokenCount', 'cache_read_input_tokens');
+        }
+
+        $output = $this->readInt($normalUsage, 'output_tokens', 'candidatesTokenCount');
+        $reasoning = $this->readNestedInt($normalUsage, ['output_tokens_details', 'reasoning_tokens']);
+        $total = $this->readInt($normalUsage, 'total_tokens', 'totalTokenCount');
+        if ($total === 0) {
+            $total = $input + $output;
+        }
+
         $aggregatedUsage = new CodexTokenUsage(
-            input: $this->readInt($normalUsage, 'input_tokens'),
-            cachedInput: $this->readNestedInt($normalUsage, ['input_tokens_details', 'cached_tokens']),
-            output: $this->readInt($normalUsage, 'output_tokens'),
-            reasoning: $this->readNestedInt($normalUsage, ['output_tokens_details', 'reasoning_tokens']),
-            total: $this->readInt($normalUsage, 'total_tokens'),
+            input: $input,
+            cachedInput: $cachedInput,
+            output: $output,
+            reasoning: $reasoning,
+            total: $total,
             imageGenerationInput: $imageUsage['input'],
             imageGenerationOutput: $imageUsage['output'],
             imageGenerationTotal: $imageUsage['total'],
@@ -175,11 +188,17 @@ final class CodexTokenUsageExtractor
     /**
      * @param array<string, mixed> $payload
      */
-    private function readInt(array $payload, string $key): int
+    private function readInt(array $payload, string ...$keys): int
     {
-        $value = $payload[$key] ?? null;
+        foreach ($keys as $key) {
+            $value = $payload[$key] ?? null;
 
-        return is_int($value) ? $value : 0;
+            if (is_int($value)) {
+                return $value;
+            }
+        }
+
+        return 0;
     }
 
     /**

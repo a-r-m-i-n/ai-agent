@@ -155,13 +155,16 @@ final class CodexRunCommandTest extends TestCase
         self::assertStringContainsString('Request', $display);
         self::assertStringContainsString('Session', $display);
         self::assertStringContainsString('tool_call_details', $display);
+        self::assertStringContainsString('estimated_cost', $display);
         self::assertStringContainsString('read_file:1', $display);
         self::assertStringContainsString('1.234', $display);
+        self::assertStringContainsString('12.444 (1,2%)', $display);
+        self::assertStringContainsString('$0.1081', $display);
         self::assertStringContainsString("\e[", $rawDisplay);
         self::assertStringContainsString("\e[90mSay hello\e[39m", $rawDisplay);
         self::assertStringNotContainsString("\e[90mread_file:1", $rawDisplay);
         self::assertStringContainsString('total', $display);
-        self::assertMatchesRegularExpression('/\x1b\[[0-9;]*33;1m12\.444\x1b\[[0-9;]*m/', $rawDisplay);
+        self::assertMatchesRegularExpression('/\x1b\[[0-9;]*33;1m12\.444 \(1,2%\)\x1b\[[0-9;]*m/', $rawDisplay);
     }
 
     public function testVeryVerboseExecutionMatchesVerboseStructure(): void
@@ -239,6 +242,26 @@ final class CodexRunCommandTest extends TestCase
         self::assertStringNotContainsString('image_generation_total', $display);
         self::assertStringNotContainsString('tool_call_details', $display);
         self::assertStringNotContainsString('total', $display);
+        self::assertStringNotContainsString('estimated_cost', $display);
+    }
+
+    public function testVerboseExecutionOmitsContextPercentageAndCostForUnknownModel(): void
+    {
+        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:unknown-model');
+
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createUnknownModelClientStub()));
+        $tester->execute([
+            'prompt' => 'Say hello',
+        ], [
+            'verbosity' => OutputInterface::VERBOSITY_VERBOSE,
+        ]);
+
+        $display = $tester->getDisplay();
+
+        self::assertStringContainsString('12.444', $display);
+        self::assertStringNotContainsString('(1,2%)', $display);
+        self::assertStringNotContainsString('estimated_cost', $display);
     }
 
     public function testSessionFileOptionMutatesConfigBeforeClientRequest(): void
@@ -259,7 +282,7 @@ final class CodexRunCommandTest extends TestCase
             {
                 return new CodexResponse(
                     content: 'Hello from Codex',
-                    model: 'openai:gpt-5',
+                    model: 'openai:gpt-5.4',
                     metadata: [
                         'system_prompt' => 'System prompt',
                         'session_file_seen' => $this->config->sessionFile(),
@@ -380,7 +403,7 @@ final class CodexRunCommandTest extends TestCase
             {
                 return new CodexResponse(
                     content: 'Hello from Codex',
-                    model: 'openai:gpt-5',
+                    model: 'openai:gpt-5.4',
                     toolCalls: [
                         ['name' => 'read_file', 'arguments' => ['path' => '/tmp/example.txt']],
                     ],
@@ -417,7 +440,7 @@ final class CodexRunCommandTest extends TestCase
             {
                 return new CodexResponse(
                     content: 'Hello from Codex',
-                    model: 'openai:gpt-5',
+                    model: 'openai:gpt-5.4',
                     metadata: [
                         'system_prompt' => 'System prompt',
                         'final_response' => [
@@ -449,6 +472,36 @@ final class CodexRunCommandTest extends TestCase
                     model: 'openai:gpt-5',
                     metadata: [
                         'system_prompt' => 'System prompt',
+                    ],
+                );
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
+            }
+        };
+
+        return new CodexClient(runtime: $runtime);
+    }
+
+    private function createUnknownModelClientStub(): CodexClient
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+            {
+                return new CodexResponse(
+                    content: 'Hello from Codex',
+                    model: 'openai:unknown-model',
+                    metadata: [
+                        'system_prompt' => 'System prompt',
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 12444,
+                                'output_tokens' => 10,
+                                'total_tokens' => 12454,
+                            ],
+                        ],
                     ],
                 );
             }

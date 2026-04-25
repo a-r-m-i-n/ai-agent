@@ -134,4 +134,67 @@ final class CodexTokenUsageExtractorTest extends TestCase
             'tool_call_details' => [],
         ], $extractor->fromResponse($response)->toArray());
     }
+
+    public function testFromResponseNormalizesGeminiCachedInputMetadata(): void
+    {
+        $extractor = new CodexTokenUsageExtractor();
+        $response = new CodexResponse(
+            content: 'done',
+            model: 'gemini:gemini-2.5-flash',
+            metadata: [
+                'final_response' => [
+                    'usage' => [
+                        'promptTokenCount' => 120,
+                        'cachedContentTokenCount' => 40,
+                        'candidatesTokenCount' => 15,
+                        'totalTokenCount' => 135,
+                    ],
+                ],
+            ],
+        );
+
+        self::assertSame([
+            'input' => 120,
+            'cached_input' => 40,
+            'output' => 15,
+            'reasoning' => 0,
+            'total' => 135,
+            'image_generation_input' => 0,
+            'image_generation_output' => 0,
+            'image_generation_total' => 0,
+            'tool_calls' => 0,
+            'tool_call_details' => [],
+        ], $extractor->fromResponse($response)->toArray());
+    }
+
+    public function testFromResponseNormalizesAnthropicCacheReadTokens(): void
+    {
+        $extractor = new CodexTokenUsageExtractor();
+        $response = new CodexResponse(
+            content: 'done',
+            model: 'anthropic:claude-sonnet-4-6',
+            metadata: [
+                'final_response' => [
+                    'usage' => [
+                        'input_tokens' => 90,
+                        'cache_read_input_tokens' => 30,
+                        'output_tokens' => 10,
+                    ],
+                ],
+            ],
+        );
+
+        self::assertSame([
+            'input' => 90,
+            'cached_input' => 30,
+            'output' => 10,
+            'reasoning' => 0,
+            'total' => 100,
+            'image_generation_input' => 0,
+            'image_generation_output' => 0,
+            'image_generation_total' => 0,
+            'tool_calls' => 0,
+            'tool_call_details' => [],
+        ], $extractor->fromResponse($response)->toArray());
+    }
 }

@@ -10,7 +10,11 @@ use Armin\CodexPhp\CodexConfig;
 use Armin\CodexPhp\CodexTokenUsage;
 use Armin\CodexPhp\Exception\MissingModel;
 use Armin\CodexPhp\Internal\AuthResolver;
+use Armin\CodexPhp\Internal\ContextUsageFormatter;
 use Armin\CodexPhp\Internal\DefaultSystemPromptBuilder;
+use Armin\CodexPhp\Internal\ModelMetadata;
+use Armin\CodexPhp\Internal\ModelMetadataRegistry;
+use Armin\CodexPhp\Internal\TokenCostCalculator;
 use Armin\CodexPhp\Tool\ToolRegistry;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -29,6 +33,9 @@ final class CodexRunCommand extends Command
         private readonly ?CodexClient $client = null,
         private readonly CodexAuthFileLoader $authFileLoader = new CodexAuthFileLoader(),
         private readonly AuthResolver $authResolver = new AuthResolver(),
+        private readonly ModelMetadataRegistry $modelMetadataRegistry = new ModelMetadataRegistry(),
+        private readonly ContextUsageFormatter $contextUsageFormatter = new ContextUsageFormatter(),
+        private readonly TokenCostCalculator $tokenCostCalculator = new TokenCostCalculator(),
     ) {
         parent::__construct();
     }
@@ -109,7 +116,12 @@ final class CodexRunCommand extends Command
         if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE) {
             $io->newLine();
             $io->writeln('<fg=gray>Statistics:</>');
-            $this->writeTokenDiagnostics($io, $client->getRequestTokens(), $client->getSessionTokens());
+            $this->writeTokenDiagnostics(
+                $io,
+                $client->getRequestTokens(),
+                $client->getSessionTokens(),
+                $this->modelMetadataRegistry->find($response->model()),
+            );
         }
 
         return Command::SUCCESS;
@@ -141,7 +153,7 @@ final class CodexRunCommand extends Command
         }
     }
 
-    private function writeTokenDiagnostics(SymfonyStyle $io, CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage): void
+    private function writeTokenDiagnostics(SymfonyStyle $io, CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): void
     {
         $table = new Table($io);
         $table->setStyle('box');
@@ -151,7 +163,7 @@ final class CodexRunCommand extends Command
             '<fg=gray>Session</>',
         ]);
 
-        foreach ($this->usageRows($requestUsage, $sessionUsage) as $row) {
+        foreach ($this->usageRows($requestUsage, $sessionUsage, $modelMetadata) as $row) {
             $table->addRow($row);
         }
 
@@ -161,7 +173,7 @@ final class CodexRunCommand extends Command
     /**
      * @return list<array{string, string, string}>
      */
-    private function usageRows(CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage): array
+    private function usageRows(CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): array
     {
         $rows = [];
         $metrics = [
@@ -184,8 +196,8 @@ final class CodexRunCommand extends Command
             if ($label === 'total') {
                 $rows[] = [
                     '<fg=yellow;options=bold>total</>',
-                    sprintf('<fg=yellow;options=bold>%s</>', $this->formatNumber($requestValue)),
-                    sprintf('<fg=yellow;options=bold>%s</>', $this->formatNumber($sessionValue)),
+                    sprintf('<fg=yellow;options=bold>%s</>', $this->contextUsageFormatter->format($requestValue, $modelMetadata)),
+                    sprintf('<fg=yellow;options=bold>%s</>', $this->contextUsageFormatter->format($sessionValue, $modelMetadata)),
                 ];
 
                 continue;
@@ -199,6 +211,17 @@ final class CodexRunCommand extends Command
 
         if ($requestDetails !== '-' || $sessionDetails !== '-') {
             $rows[] = ['tool_call_details', $requestDetails, $sessionDetails];
+        }
+
+        $requestCost = $this->tokenCostCalculator->estimate($requestUsage, $modelMetadata);
+        $sessionCost = $this->tokenCostCalculator->estimate($sessionUsage, $modelMetadata);
+
+        if (
+            $requestCost !== null
+            && $sessionCost !== null
+            && !$this->isZeroUsage($requestUsage, $sessionUsage)
+        ) {
+            $rows[] = ['estimated_cost', $requestCost->formatUsd(), $sessionCost->formatUsd()];
         }
 
         return $rows;
@@ -223,5 +246,11 @@ final class CodexRunCommand extends Command
     private function formatNumber(int $value): string
     {
         return number_format($value, 0, ',', '.');
+    }
+
+    private function isZeroUsage(CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage): bool
+    {
+        return $requestUsage->toArray() === (new CodexTokenUsage())->toArray()
+            && $sessionUsage->toArray() === (new CodexTokenUsage())->toArray();
     }
 }
