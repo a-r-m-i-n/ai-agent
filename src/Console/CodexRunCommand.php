@@ -7,15 +7,19 @@ namespace Armin\CodexPhp\Console;
 use Armin\CodexPhp\Auth\CodexAuthFileLoader;
 use Armin\CodexPhp\CodexClient;
 use Armin\CodexPhp\CodexConfig;
+use Armin\CodexPhp\CodexTokenUsage;
 use Armin\CodexPhp\Exception\MissingModel;
 use Armin\CodexPhp\Internal\AuthResolver;
-use JsonException;
+use Armin\CodexPhp\Internal\DefaultSystemPromptBuilder;
+use Armin\CodexPhp\Tool\ToolRegistry;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(name: 'codex')]
 final class CodexRunCommand extends Command
@@ -37,23 +41,18 @@ final class CodexRunCommand extends Command
             ->addOption('model', null, InputOption::VALUE_REQUIRED, 'The model to use.')
             ->addOption('key', null, InputOption::VALUE_REQUIRED, 'The API key to use.')
             ->addOption('auth-file', null, InputOption::VALUE_REQUIRED, 'Path to an auth.json file.')
-            ->addOption('session-file', null, InputOption::VALUE_REQUIRED, 'Path to a JSON file used to persist session history.')
-            ->addOption('debug', null, InputOption::VALUE_NONE, 'Output debug JSON with the prompt, response content, metadata, and tool calls.')
-            ->addOption('debug-all', null, InputOption::VALUE_NONE, 'Output the final provider response together with all parsed stream events when available.');
+            ->addOption('session-file', null, InputOption::VALUE_REQUIRED, 'Path to a JSON file used to persist session history.');
     }
 
-    /**
-     * @throws JsonException
-     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $prompt = (string) $input->getArgument('prompt');
+        $io = new SymfonyStyle($input, $output);
+
+        $prompt = $this->resolvePromptInput((string) $input->getArgument('prompt'));
         $modelOption = $input->getOption('model');
         $keyOption = $input->getOption('key');
         $authFileOption = $input->getOption('auth-file');
         $sessionFileOption = $input->getOption('session-file');
-        $debug = (bool) $input->getOption('debug');
-        $debugAll = (bool) $input->getOption('debug-all');
         $auth = is_string($authFileOption) && $authFileOption !== ''
             ? $this->authFileLoader->load($authFileOption)
             : null;
@@ -89,39 +88,140 @@ final class CodexRunCommand extends Command
             throw MissingModel::forEnvVar($config->modelEnvVar());
         }
 
-        $response = ($this->client ?? new CodexClient($config))->request($prompt);
-
-        if ($debugAll) {
-            $output->writeln(json_encode([
-                'final_response' => $response->metadata()['final_response'] ?? null,
-                'stream_events' => $response->metadata()['stream_events'] ?? [],
-            ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
-
-            return Command::SUCCESS;
+        if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE) {
+            $io->writeln('<fg=gray>System prompt:</>');
+            $this->writeDiagnosticBlock($io, $this->buildSystemPrompt($config));
+            $io->newLine();
+            $io->writeln('<fg=gray>User prompt:</>');
+            $this->writeDiagnosticBlock($io, $prompt);
+            $io->newLine();
         }
 
-        if ($debug) {
-            $keySource = is_string($keyOption) && $keyOption !== ''
-                ? 'option'
-                : ($auth !== null ? 'auth_file' : 'env');
-            $modelSource = is_string($modelOption) && $modelOption !== '' ? 'option' : 'env';
-            $output->writeln(json_encode([
-                'prompt' => $prompt,
-                'model' => $response->model(),
-                'model_source' => $modelSource,
-                'api_key_source' => $keySource,
-                'session_file' => $config->sessionFile(),
-                'session' => $response->metadata()['session'] ?? null,
-                'content' => $response->content(),
-                'tool_calls' => $response->toolCalls(),
-                'metadata' => $response->metadata(),
-            ], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+        $client = $this->client ?? new CodexClient($config);
+        $response = $client->request($prompt);
 
-            return Command::SUCCESS;
+        if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE) {
+            $io->writeln('<fg=gray>Output:</>');
         }
 
-        $output->writeln($response->content());
+        $io->writeln($response->content());
+
+        if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE) {
+            $io->newLine();
+            $io->writeln('<fg=gray>Statistics:</>');
+            $this->writeTokenDiagnostics($io, $client->getRequestTokens(), $client->getSessionTokens());
+        }
 
         return Command::SUCCESS;
+    }
+
+    private function resolvePromptInput(string $prompt): string
+    {
+        if (!is_file($prompt) || !is_readable($prompt)) {
+            return $prompt;
+        }
+
+        $contents = file_get_contents($prompt);
+
+        return is_string($contents) ? $contents : $prompt;
+    }
+
+    private function buildSystemPrompt(CodexConfig $config): string
+    {
+        return (new DefaultSystemPromptBuilder(
+            $config,
+            ToolRegistry::withBuiltins($config->workingDirectory()),
+        ))->build();
+    }
+
+    private function writeDiagnosticBlock(SymfonyStyle $io, string $content): void
+    {
+        foreach (preg_split("/\r\n|\n|\r/", $content) ?: [] as $line) {
+            $io->writeln(sprintf('<fg=gray>%s</>', $line));
+        }
+    }
+
+    private function writeTokenDiagnostics(SymfonyStyle $io, CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage): void
+    {
+        $table = new Table($io);
+        $table->setStyle('box');
+        $table->setHeaders([
+            '<fg=gray>Metric</>',
+            '<fg=gray>Request</>',
+            '<fg=gray>Session</>',
+        ]);
+
+        foreach ($this->usageRows($requestUsage, $sessionUsage) as $row) {
+            $table->addRow($row);
+        }
+
+        $table->render();
+    }
+
+    /**
+     * @return list<array{string, string, string}>
+     */
+    private function usageRows(CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage): array
+    {
+        $rows = [];
+        $metrics = [
+            ['input', $requestUsage->input(), $sessionUsage->input()],
+            ['cached_input', $requestUsage->cachedInput(), $sessionUsage->cachedInput()],
+            ['output', $requestUsage->output(), $sessionUsage->output()],
+            ['reasoning', $requestUsage->reasoning(), $sessionUsage->reasoning()],
+            ['total', $requestUsage->total(), $sessionUsage->total()],
+            ['image_generation_input', $requestUsage->imageGenerationInput(), $sessionUsage->imageGenerationInput()],
+            ['image_generation_output', $requestUsage->imageGenerationOutput(), $sessionUsage->imageGenerationOutput()],
+            ['image_generation_total', $requestUsage->imageGenerationTotal(), $sessionUsage->imageGenerationTotal()],
+            ['tool_calls', $requestUsage->toolCalls(), $sessionUsage->toolCalls()],
+        ];
+
+        foreach ($metrics as [$label, $requestValue, $sessionValue]) {
+            if ($requestValue === 0 && $sessionValue === 0) {
+                continue;
+            }
+
+            if ($label === 'total') {
+                $rows[] = [
+                    '<fg=yellow;options=bold>total</>',
+                    sprintf('<fg=yellow;options=bold>%s</>', $this->formatNumber($requestValue)),
+                    sprintf('<fg=yellow;options=bold>%s</>', $this->formatNumber($sessionValue)),
+                ];
+
+                continue;
+            }
+
+            $rows[] = [$label, $this->formatNumber($requestValue), $this->formatNumber($sessionValue)];
+        }
+
+        $requestDetails = $this->formatToolCallDetails($requestUsage);
+        $sessionDetails = $this->formatToolCallDetails($sessionUsage);
+
+        if ($requestDetails !== '-' || $sessionDetails !== '-') {
+            $rows[] = ['tool_call_details', $requestDetails, $sessionDetails];
+        }
+
+        return $rows;
+    }
+
+    private function formatToolCallDetails(CodexTokenUsage $usage): string
+    {
+        $details = $usage->toolCallDetails();
+
+        if ($details === []) {
+            return '-';
+        }
+
+        $parts = [];
+        foreach ($details as $toolName => $count) {
+            $parts[] = sprintf('%s:%d', $toolName, $count);
+        }
+
+        return implode(', ', $parts);
+    }
+
+    private function formatNumber(int $value): string
+    {
+        return number_format($value, 0, ',', '.');
     }
 }

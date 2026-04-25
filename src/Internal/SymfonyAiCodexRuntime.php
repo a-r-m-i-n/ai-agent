@@ -67,9 +67,10 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 
         $toolbox = new SymfonyAiToolbox($this->toolRegistry);
         $imageGenerator = new ImageGenerator($this->config->workingDirectory(), $this->httpClient, $resolvedAuth);
+        $systemPrompt = ($this->systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry))->build();
         $messageBag = $this->createMessageBagFromSession(
             $session,
-            ($this->systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry))->build(),
+            $systemPrompt,
         );
         $replayedMessageCount = \count($messageBag->getMessages()) - 1;
         $messageContents = [$prompt];
@@ -169,6 +170,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         }
 
         $metadata = $response->metadata();
+        $metadata['system_prompt'] = $systemPrompt;
 
         if ($attachedImagesMetadata !== []) {
             $metadata['attached_images'] = $attachedImagesMetadata;
