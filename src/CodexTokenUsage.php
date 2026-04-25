@@ -6,6 +6,9 @@ namespace Armin\CodexPhp;
 
 final class CodexTokenUsage
 {
+    /**
+     * @param array<string, int> $toolCallDetails
+     */
     public function __construct(
         private readonly int $input = 0,
         private readonly int $cachedInput = 0,
@@ -15,6 +18,8 @@ final class CodexTokenUsage
         private readonly int $imageGenerationInput = 0,
         private readonly int $imageGenerationOutput = 0,
         private readonly int $imageGenerationTotal = 0,
+        private readonly int $toolCalls = 0,
+        private readonly array $toolCallDetails = [],
     ) {
     }
 
@@ -58,6 +63,19 @@ final class CodexTokenUsage
         return $this->imageGenerationTotal;
     }
 
+    public function toolCalls(): int
+    {
+        return $this->toolCalls;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    public function toolCallDetails(): array
+    {
+        return $this->toolCallDetails;
+    }
+
     public function withAdded(self $usage): self
     {
         return new self(
@@ -69,6 +87,8 @@ final class CodexTokenUsage
             $this->imageGenerationInput + $usage->imageGenerationInput,
             $this->imageGenerationOutput + $usage->imageGenerationOutput,
             $this->imageGenerationTotal + $usage->imageGenerationTotal,
+            $this->toolCalls + $usage->toolCalls,
+            $this->mergeToolCallDetails($usage->toolCallDetails),
         );
     }
 
@@ -81,7 +101,9 @@ final class CodexTokenUsage
      *     total: int,
      *     image_generation_input: int,
      *     image_generation_output: int,
-     *     image_generation_total: int
+     *     image_generation_total: int,
+     *     tool_calls: int,
+     *     tool_call_details: array<string, int>
      * }
      */
     public function toArray(): array
@@ -95,6 +117,8 @@ final class CodexTokenUsage
             'image_generation_input' => $this->imageGenerationInput,
             'image_generation_output' => $this->imageGenerationOutput,
             'image_generation_total' => $this->imageGenerationTotal,
+            'tool_calls' => $this->toolCalls,
+            'tool_call_details' => $this->toolCallDetails,
         ];
     }
 
@@ -102,7 +126,12 @@ final class CodexTokenUsage
     {
         $usage = array_filter(
             $this->toArray(),
-            static fn (int $value, string $key): bool => $key === 'total' || $value !== 0,
+            static fn (mixed $value, string $key): bool => match (true) {
+                $key === 'total' => true,
+                is_int($value) => $value !== 0,
+                is_array($value) => $value !== [],
+                default => false,
+            },
             ARRAY_FILTER_USE_BOTH,
         );
 
@@ -118,5 +147,26 @@ final class CodexTokenUsage
     public function __toString(): string
     {
         return $this->toJson();
+    }
+
+    /**
+     * @param array<string, int> $otherDetails
+     * @return array<string, int>
+     */
+    private function mergeToolCallDetails(array $otherDetails): array
+    {
+        $merged = $this->toolCallDetails;
+
+        foreach ($otherDetails as $toolName => $count) {
+            if (!isset($merged[$toolName])) {
+                $merged[$toolName] = 0;
+            }
+
+            $merged[$toolName] += $count;
+        }
+
+        ksort($merged);
+
+        return $merged;
     }
 }

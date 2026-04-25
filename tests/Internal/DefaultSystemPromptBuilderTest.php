@@ -24,9 +24,18 @@ final class DefaultSystemPromptBuilderTest extends TestCase
 
     protected function tearDown(): void
     {
-        $agentsFile = $this->tempDirectory . '/AGENTS.md';
-        if (is_file($agentsFile)) {
-            unlink($agentsFile);
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->tempDirectory, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+
+        foreach ($iterator as $item) {
+            if ($item->isDir()) {
+                @rmdir($item->getPathname());
+                continue;
+            }
+
+            @unlink($item->getPathname());
         }
 
         @rmdir($this->tempDirectory);
@@ -40,12 +49,29 @@ final class DefaultSystemPromptBuilderTest extends TestCase
 
         self::assertStringContainsString('You are Codex, a pragmatic coding assistant.', $prompt);
         self::assertStringNotContainsString('Available tools:', $prompt);
+        self::assertStringNotContainsString('Repository context:', $prompt);
         self::assertStringNotContainsString('Repository instructions:', $prompt);
     }
 
-    public function testBuildIncludesToolDescriptionsAndAgentsFile(): void
+    public function testBuildIncludesToolDescriptionsAgentsFileAndRepositoryContext(): void
     {
         file_put_contents($this->tempDirectory . '/AGENTS.md', "# Repo Rules\nUse tests.\n");
+        file_put_contents($this->tempDirectory . '/.gitignore', "ignored.txt\nignored-dir/\n");
+        file_put_contents($this->tempDirectory . '/README.md', '# Read me');
+        file_put_contents($this->tempDirectory . '/composer.json', json_encode([
+            'name' => 'acme/example',
+            'require' => ['php' => '^8.4'],
+            'scripts' => ['test' => 'phpunit'],
+            'bin' => ['bin/codex'],
+        ], JSON_THROW_ON_ERROR));
+        file_put_contents($this->tempDirectory . '/phpunit.xml.dist', '<phpunit/>');
+        mkdir($this->tempDirectory . '/.ddev', 0777, true);
+        mkdir($this->tempDirectory . '/bin', 0777, true);
+        mkdir($this->tempDirectory . '/src', 0777, true);
+        mkdir($this->tempDirectory . '/src/Nested', 0777, true);
+        file_put_contents($this->tempDirectory . '/visible.txt', 'visible');
+        file_put_contents($this->tempDirectory . '/ignored.txt', 'hidden');
+        mkdir($this->tempDirectory . '/ignored-dir', 0777, true);
 
         $registry = new ToolRegistry();
         $registry->register(new class implements ToolInterface, ToolDescriptionInterface {
@@ -70,8 +96,16 @@ final class DefaultSystemPromptBuilderTest extends TestCase
 
         self::assertStringContainsString('Available tools:', $prompt);
         self::assertStringContainsString('- deploy: Deploys the application to the configured environment.', $prompt);
-        self::assertStringContainsString('Local image paths referenced in the prompt are attached automatically as image input', $prompt);
-        self::assertStringContainsString('use generate_image instead of write_file', $prompt);
+        self::assertStringContainsString('Prefer read_file for targeted inspection, search for discovery, apply_patch for edits, and shell for local command execution.', $prompt);
+        self::assertStringContainsString('Repository context:', $prompt);
+        self::assertStringContainsString('Working directory: ' . $this->tempDirectory, $prompt);
+        self::assertStringContainsString('Root files: .gitignore, AGENTS.md, README.md, composer.json, phpunit.xml.dist, visible.txt', $prompt);
+        self::assertStringContainsString('Directories (depth <= 2): .ddev, bin, src, src/Nested', $prompt);
+        self::assertStringContainsString('DDEV is configured here. Default to running project commands via `ddev exec`.', $prompt);
+        self::assertStringContainsString('Composer manifest detected for a PHP project; package `acme/example`; PHP ^8.4; binaries: bin/codex; scripts: test.', $prompt);
+        self::assertStringContainsString('PHPUnit configuration is present.', $prompt);
+        self::assertStringNotContainsString('ignored.txt', $prompt);
+        self::assertStringNotContainsString('ignored-dir', $prompt);
         self::assertStringContainsString('Repository instructions:', $prompt);
         self::assertStringContainsString('# Repo Rules', $prompt);
     }

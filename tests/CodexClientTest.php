@@ -14,6 +14,7 @@ use Armin\CodexPhp\Exception\InvalidToolInput;
 use Armin\CodexPhp\Exception\InvalidSession;
 use Armin\CodexPhp\Exception\ToolNotFound;
 use Armin\CodexPhp\Internal\CodexRuntimeInterface;
+use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
 use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
 use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolRegistry;
@@ -45,12 +46,17 @@ final class CodexClientTest extends TestCase
     {
         $client = new CodexClient();
 
+        self::assertTrue($client->hasTool('apply_patch'));
         self::assertTrue($client->hasTool('read_file'));
-        self::assertTrue($client->hasTool('write_file'));
-        self::assertTrue($client->hasTool('run_command'));
-        self::assertTrue($client->hasTool('view_image'));
-        self::assertTrue($client->hasTool('find_files'));
-        self::assertTrue($client->hasTool('generate_image'));
+        self::assertTrue($client->hasTool('search'));
+        self::assertTrue($client->hasTool('shell'));
+        self::assertFalse($client->hasTool('write_file'));
+        self::assertFalse($client->hasTool('edit_file'));
+        self::assertFalse($client->hasTool('write_files'));
+        self::assertFalse($client->hasTool('run_command'));
+        self::assertFalse($client->hasTool('view_image'));
+        self::assertFalse($client->hasTool('find_files'));
+        self::assertFalse($client->hasTool('generate_image'));
     }
 
     public function testApiKeyIsReadFromEnvironment(): void
@@ -117,60 +123,110 @@ final class CodexClientTest extends TestCase
         self::assertNull($client->apiKey());
     }
 
-    public function testReadAndWriteFileToolsWork(): void
-    {
-        $client = new CodexClient();
-        $path = $this->tempDirectory . '/example.txt';
-
-        $write = $client->runTool('write_file', [
-            'path' => $path,
-            'contents' => 'hello',
-        ]);
-
-        self::assertTrue($write->isSuccess());
-        self::assertSame(5, $write->payload()['bytes_written']);
-
-        $read = $client->runTool('read_file', [
-            'path' => $path,
-        ]);
-
-        self::assertTrue($read->isSuccess());
-        self::assertSame('hello', $read->payload()['contents']);
-    }
-
-    public function testReadAndWriteFileToolsResolveRelativePathsAgainstConfiguredWorkingDirectory(): void
+    public function testReadFileAndApplyPatchToolsWork(): void
     {
         $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $path = $this->tempDirectory . '/example.txt';
+        file_put_contents($path, "hello\n");
 
-        $write = $client->runTool('write_file', [
-            'path' => 'nested/example.txt',
-            'contents' => 'hello',
+        $patch = $client->runTool('apply_patch', [
+            'patch' => "--- example.txt\n+++ example.txt\n@@ -1 +1 @@\n-hello\n+updated\n",
         ]);
 
-        self::assertTrue($write->isSuccess());
-        self::assertSame($this->tempDirectory . '/nested/example.txt', $write->payload()['path']);
+        self::assertTrue($patch->isSuccess());
+        self::assertSame(1, $patch->payload()['file_count']);
+        self::assertSame(1, $patch->payload()['hunk_count']);
 
         $read = $client->runTool('read_file', [
-            'path' => 'nested/example.txt',
+            'path' => $path,
         ]);
 
         self::assertTrue($read->isSuccess());
-        self::assertSame('hello', $read->payload()['contents']);
-        self::assertSame($this->tempDirectory . '/nested/example.txt', $read->payload()['path']);
+        self::assertSame('updated', $read->payload()['contents']);
+        self::assertSame(1, $read->payload()['start_line']);
+        self::assertSame(1, $read->payload()['end_line']);
+        self::assertSame(1, $read->payload()['total_lines']);
+        self::assertFalse($read->payload()['truncated']);
     }
 
-    public function testWriteFileAllowsEmptyContents(): void
+    public function testApplyPatchResolvesRelativePathsAgainstConfiguredWorkingDirectory(): void
     {
-        $client = new CodexClient();
-        $path = $this->tempDirectory . '/empty.txt';
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        mkdir($this->tempDirectory . '/nested', 0777, true);
+        file_put_contents($this->tempDirectory . '/nested/example.txt', "hello\n");
 
-        $result = $client->runTool('write_file', [
-            'path' => $path,
-            'contents' => '',
+        $result = $client->runTool('apply_patch', [
+            'patch' => "--- nested/example.txt\n+++ nested/example.txt\n@@ -1 +1 @@\n-hello\n+patched\n",
         ]);
 
         self::assertTrue($result->isSuccess());
-        self::assertSame(0, $result->payload()['bytes_written']);
+        self::assertSame(['nested/example.txt'], $result->payload()['files']);
+
+        $read = $client->runTool('read_file', [
+            'path' => 'nested/example.txt',
+        ]);
+
+        self::assertTrue($read->isSuccess());
+        self::assertSame('patched', $read->payload()['contents']);
+        self::assertSame($this->tempDirectory . '/nested/example.txt', $read->payload()['path']);
+    }
+
+    public function testReadFileSupportsLineRanges(): void
+    {
+        $client = new CodexClient();
+        $path = $this->tempDirectory . '/lines.txt';
+        file_put_contents($path, "one\ntwo\nthree\nfour\n");
+
+        $result = $client->runTool('read_file', [
+            'path' => $path,
+            'start_line' => 2,
+            'end_line' => 3,
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame("two\nthree", $result->payload()['contents']);
+        self::assertSame(2, $result->payload()['start_line']);
+        self::assertSame(3, $result->payload()['end_line']);
+        self::assertSame(4, $result->payload()['total_lines']);
+        self::assertFalse($result->payload()['truncated']);
+    }
+
+    public function testReadFileSupportsTailLines(): void
+    {
+        $client = new CodexClient();
+        $path = $this->tempDirectory . '/tail.txt';
+        file_put_contents($path, "one\ntwo\nthree\nfour");
+
+        $result = $client->runTool('read_file', [
+            'path' => $path,
+            'tail_lines' => 2,
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame("three\nfour", $result->payload()['contents']);
+        self::assertSame(3, $result->payload()['start_line']);
+        self::assertSame(4, $result->payload()['end_line']);
+        self::assertSame(4, $result->payload()['total_lines']);
+        self::assertFalse($result->payload()['truncated']);
+    }
+
+    public function testReadFileSupportsMaxLinesAndMarksTruncation(): void
+    {
+        $client = new CodexClient();
+        $path = $this->tempDirectory . '/truncate.txt';
+        file_put_contents($path, "one\ntwo\nthree\nfour");
+
+        $result = $client->runTool('read_file', [
+            'path' => $path,
+            'max_lines' => 2,
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame("one\ntwo", $result->payload()['contents']);
+        self::assertSame(1, $result->payload()['start_line']);
+        self::assertSame(2, $result->payload()['end_line']);
+        self::assertSame(4, $result->payload()['total_lines']);
+        self::assertTrue($result->payload()['truncated']);
     }
 
     public function testReadFileReturnsFailureForMissingFile(): void
@@ -185,7 +241,88 @@ final class CodexClientTest extends TestCase
         self::assertSame('File not found.', $result->payload()['error']);
     }
 
-    public function testFindFilesListsFilesInDirectory(): void
+    public function testReadFileIgnoresTailLinesWhenLineRangeIsProvided(): void
+    {
+        $client = new CodexClient();
+        $path = $this->tempDirectory . '/invalid-lines.txt';
+        file_put_contents($path, "one\ntwo");
+
+        $result = $client->runTool('read_file', [
+            'path' => $path,
+            'start_line' => 1,
+            'tail_lines' => 1,
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame("one\ntwo", $result->payload()['contents']);
+        self::assertSame(1, $result->payload()['start_line']);
+        self::assertSame(2, $result->payload()['end_line']);
+    }
+
+    public function testReadFileTreatsZeroTailLinesAsNotProvided(): void
+    {
+        $client = new CodexClient();
+        $path = $this->tempDirectory . '/zero-tail.txt';
+        file_put_contents($path, "one\ntwo");
+
+        $result = $client->runTool('read_file', [
+            'path' => $path,
+            'tail_lines' => 0,
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame("one\ntwo", $result->payload()['contents']);
+        self::assertSame(1, $result->payload()['start_line']);
+        self::assertSame(2, $result->payload()['end_line']);
+    }
+
+    public function testReadFileReturnsFailureWhenStartLineIsOutsideFile(): void
+    {
+        $client = new CodexClient();
+        $path = $this->tempDirectory . '/outside.txt';
+        file_put_contents($path, "one\ntwo");
+
+        $result = $client->runTool('read_file', [
+            'path' => $path,
+            'start_line' => 3,
+        ]);
+
+        self::assertFalse($result->isSuccess());
+        self::assertSame('Start line is outside the file.', $result->payload()['error']);
+    }
+
+    public function testApplyPatchSupportsMultipleFiles(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        file_put_contents($this->tempDirectory . '/first.txt', "one\n");
+        file_put_contents($this->tempDirectory . '/second.txt', "two\n");
+
+        $result = $client->runTool('apply_patch', [
+            'patch' => "--- first.txt\n+++ first.txt\n@@ -1 +1 @@\n-one\n+eins\n--- second.txt\n+++ second.txt\n@@ -1 +1 @@\n-two\n+zwei\n",
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame(2, $result->payload()['file_count']);
+        self::assertSame(2, $result->payload()['hunk_count']);
+        self::assertSame("eins\n", file_get_contents($this->tempDirectory . '/first.txt'));
+        self::assertSame("zwei\n", file_get_contents($this->tempDirectory . '/second.txt'));
+    }
+
+    public function testApplyPatchRollsBackWhenPatchIsInvalid(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        file_put_contents($this->tempDirectory . '/broken.txt', "alpha\n");
+
+        $result = $client->runTool('apply_patch', [
+            'patch' => "--- broken.txt\n+++ broken.txt\n@@ -1 +1 @@\n-beta\n+gamma\n",
+        ]);
+
+        self::assertFalse($result->isSuccess());
+        self::assertSame('Patch validation failed.', $result->payload()['error']);
+        self::assertSame("alpha\n", file_get_contents($this->tempDirectory . '/broken.txt'));
+    }
+
+    public function testSearchListsFilesInDirectory(): void
     {
         $client = new CodexClient();
         $directory = $this->tempDirectory . '/files';
@@ -193,57 +330,262 @@ final class CodexClientTest extends TestCase
         file_put_contents($directory . '/a.php', '<?php');
         file_put_contents($directory . '/b.txt', 'text');
 
-        $result = $client->runTool('find_files', [
+        $result = $client->runTool('search', [
             'path' => $directory,
         ]);
 
         self::assertTrue($result->isSuccess());
         self::assertSame($directory, $result->payload()['path']);
-        self::assertNull($result->payload()['filter']);
+        self::assertNull($result->payload()['name_pattern']);
+        self::assertNull($result->payload()['query']);
         self::assertSame(2, $result->payload()['count']);
         self::assertSame([
-            $directory . '/a.php',
-            $directory . '/b.txt',
-        ], $result->payload()['files']);
+            ['type' => 'file', 'path' => $directory . '/a.php'],
+            ['type' => 'file', 'path' => $directory . '/b.txt'],
+        ], $result->payload()['results']);
     }
 
-    public function testFindFilesAppliesFilterAndWorkingDirectory(): void
+    public function testSearchLimitsFileSearchByDepth(): void
+    {
+        $client = new CodexClient();
+        $directory = $this->tempDirectory . '/depth-files';
+        mkdir($directory . '/nested/deeper', 0777, true);
+        file_put_contents($directory . '/root.txt', 'root');
+        file_put_contents($directory . '/nested/child.txt', 'child');
+        file_put_contents($directory . '/nested/deeper/grandchild.txt', 'grandchild');
+
+        $depthZero = $client->runTool('search', [
+            'path' => $directory,
+            'depth' => 0,
+        ]);
+
+        self::assertTrue($depthZero->isSuccess());
+        self::assertSame(0, $depthZero->payload()['depth']);
+        self::assertSame(1, $depthZero->payload()['count']);
+        self::assertSame([
+            ['type' => 'file', 'path' => $directory . '/root.txt'],
+        ], $depthZero->payload()['results']);
+
+        $depthOne = $client->runTool('search', [
+            'path' => $directory,
+            'depth' => 1,
+        ]);
+
+        self::assertTrue($depthOne->isSuccess());
+        self::assertSame(1, $depthOne->payload()['depth']);
+        self::assertSame(2, $depthOne->payload()['count']);
+        self::assertSame([
+            ['type' => 'file', 'path' => $directory . '/nested/child.txt'],
+            ['type' => 'file', 'path' => $directory . '/root.txt'],
+        ], $depthOne->payload()['results']);
+    }
+
+    public function testSearchFindsContentMatchesWithFiltersAndLineNumbers(): void
     {
         $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
         mkdir($this->tempDirectory . '/nested', 0777, true);
-        file_put_contents($this->tempDirectory . '/nested/a.php', '<?php');
-        file_put_contents($this->tempDirectory . '/nested/b.txt', 'text');
+        file_put_contents($this->tempDirectory . '/nested/a.php', "<?php\nneedle here\n");
+        file_put_contents($this->tempDirectory . '/nested/b.txt', "needle elsewhere\n");
 
-        $result = $client->runTool('find_files', [
+        $result = $client->runTool('search', [
             'path' => 'nested',
-            'filter' => '*.php',
+            'name_pattern' => '*.php',
+            'query' => 'needle',
         ]);
 
         self::assertTrue($result->isSuccess());
         self::assertSame($this->tempDirectory . '/nested', $result->payload()['path']);
-        self::assertSame('*.php', $result->payload()['filter']);
+        self::assertSame('*.php', $result->payload()['name_pattern']);
+        self::assertSame('needle', $result->payload()['query']);
         self::assertSame(1, $result->payload()['count']);
-        self::assertSame([
-            $this->tempDirectory . '/nested/a.php',
-        ], $result->payload()['files']);
+        self::assertSame('content', $result->payload()['results'][0]['type']);
+        self::assertSame($this->tempDirectory . '/nested/a.php', $result->payload()['results'][0]['path']);
+        self::assertSame(2, $result->payload()['results'][0]['line']);
+        self::assertStringContainsString('needle here', $result->payload()['results'][0]['snippet']);
     }
 
-    public function testFindFilesReturnsFailureForMissingDirectory(): void
+    public function testSearchLimitsContentMatchesByDepth(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        mkdir($this->tempDirectory . '/depth-content/child/grandchild', 0777, true);
+        file_put_contents($this->tempDirectory . '/depth-content/root.txt', "needle root\n");
+        file_put_contents($this->tempDirectory . '/depth-content/child/match.txt', "needle child\n");
+        file_put_contents($this->tempDirectory . '/depth-content/child/grandchild/match.txt', "needle grandchild\n");
+
+        $result = $client->runTool('search', [
+            'path' => 'depth-content',
+            'query' => 'needle',
+            'depth' => 1,
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame(1, $result->payload()['depth']);
+        self::assertSame(2, $result->payload()['count']);
+        self::assertSame([
+            $this->tempDirectory . '/depth-content/child/match.txt',
+            $this->tempDirectory . '/depth-content/root.txt',
+        ], array_column($result->payload()['results'], 'path'));
+    }
+
+    public function testSearchCanIncludeFullContentsForFileMatches(): void
+    {
+        $client = new CodexClient();
+        $directory = $this->tempDirectory . '/contents-full';
+        mkdir($directory, 0777, true);
+        file_put_contents($directory . '/example.txt', "one\ntwo\n");
+
+        $result = $client->runTool('search', [
+            'path' => $directory,
+            'contents' => 'full',
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame('full', $result->payload()['contents']);
+        self::assertSame("one\ntwo\n", $result->payload()['results'][0]['contents']);
+    }
+
+    public function testSearchCanIncludeHeadContentsForFileMatches(): void
+    {
+        $client = new CodexClient();
+        $directory = $this->tempDirectory . '/contents-head';
+        mkdir($directory, 0777, true);
+        file_put_contents($directory . '/example.txt', "one\ntwo\nthree\n");
+
+        $result = $client->runTool('search', [
+            'path' => $directory,
+            'contents' => 'head:2',
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame('head:2', $result->payload()['contents']);
+        self::assertSame("one\ntwo", $result->payload()['results'][0]['contents']);
+    }
+
+    public function testSearchCanIncludeTailContentsForContentMatches(): void
+    {
+        $client = new CodexClient();
+        $directory = $this->tempDirectory . '/contents-tail';
+        mkdir($directory, 0777, true);
+        file_put_contents($directory . '/example.txt', "one\ntwo\nneedle\nfour\n");
+
+        $result = $client->runTool('search', [
+            'path' => $directory,
+            'query' => 'needle',
+            'contents' => 'tail:2',
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame('tail:2', $result->payload()['contents']);
+        self::assertSame(1, $result->payload()['count']);
+        self::assertSame(3, $result->payload()['results'][0]['line']);
+        self::assertSame("needle\nfour", $result->payload()['results'][0]['contents']);
+    }
+
+    public function testSearchTreatsEmptyQueryAsFileSearch(): void
+    {
+        $client = new CodexClient();
+        $directory = $this->tempDirectory . '/empty-query-search';
+        mkdir($directory, 0777, true);
+        file_put_contents($directory . '/composer.json', "{\"name\":\"demo\"}\n");
+
+        $result = $client->runTool('search', [
+            'path' => $directory,
+            'name_pattern' => 'composer.json',
+            'query' => '',
+            'contents' => 'full',
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertNull($result->payload()['query']);
+        self::assertSame(1, $result->payload()['count']);
+        self::assertSame('file', $result->payload()['results'][0]['type']);
+        self::assertSame("{\"name\":\"demo\"}\n", $result->payload()['results'][0]['contents']);
+    }
+
+    public function testSearchRespectsGitIgnoreRules(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        file_put_contents($this->tempDirectory . '/.gitignore', "ignored.txt\nignored-dir/\n");
+        file_put_contents($this->tempDirectory . '/visible.txt', 'needle');
+        file_put_contents($this->tempDirectory . '/ignored.txt', 'needle');
+        mkdir($this->tempDirectory . '/ignored-dir', 0777, true);
+        file_put_contents($this->tempDirectory . '/ignored-dir/hidden.txt', 'needle');
+
+        $result = $client->runTool('search', [
+            'path' => '.',
+            'query' => 'needle',
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame(1, $result->payload()['count']);
+        self::assertSame($this->tempDirectory . '/visible.txt', $result->payload()['results'][0]['path']);
+    }
+
+    public function testSearchRespectsGitIgnoreRulesWhenDepthAndContentsAreUsed(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        file_put_contents($this->tempDirectory . '/.gitignore', "ignored-dir/\n");
+        mkdir($this->tempDirectory . '/visible', 0777, true);
+        mkdir($this->tempDirectory . '/ignored-dir', 0777, true);
+        file_put_contents($this->tempDirectory . '/visible/file.txt', "needle\nvisible\n");
+        file_put_contents($this->tempDirectory . '/ignored-dir/file.txt', "needle\nignored\n");
+
+        $result = $client->runTool('search', [
+            'path' => '.',
+            'query' => 'needle',
+            'depth' => 1,
+            'contents' => 'head:2',
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame(1, $result->payload()['count']);
+        self::assertSame($this->tempDirectory . '/visible/file.txt', $result->payload()['results'][0]['path']);
+        self::assertSame("needle\nvisible", $result->payload()['results'][0]['contents']);
+    }
+
+    public function testSearchReturnsFailureForMissingDirectory(): void
     {
         $client = new CodexClient();
 
-        $result = $client->runTool('find_files', [
+        $result = $client->runTool('search', [
             'path' => $this->tempDirectory . '/missing',
         ]);
 
         self::assertFalse($result->isSuccess());
         self::assertSame('Directory not found.', $result->payload()['error']);
-        self::assertSame([], $result->payload()['files']);
+        self::assertSame([], $result->payload()['results']);
+    }
+
+    public function testSearchRejectsInvalidDepth(): void
+    {
+        $client = new CodexClient();
+
+        $this->expectException(InvalidToolInput::class);
+        $this->expectExceptionMessage('The "depth" input must be a non-negative integer when provided.');
+
+        $client->runTool('search', [
+            'path' => $this->tempDirectory,
+            'depth' => -1,
+        ]);
+    }
+
+    public function testSearchRejectsInvalidContentsMode(): void
+    {
+        $client = new CodexClient();
+
+        $this->expectException(InvalidToolInput::class);
+        $this->expectExceptionMessage('The "contents" input must be one of "full", "head:N", or "tail:N" when provided.');
+
+        $client->runTool('search', [
+            'path' => $this->tempDirectory,
+            'contents' => 'head:0',
+        ]);
     }
 
     public function testViewImageReturnsCompactImageMetadata(): void
     {
-        $client = new CodexClient();
+        $client = new CodexClient(registerBuiltins: false);
+        $client->registerTool(new ViewImageTool());
         $path = $this->tempDirectory . '/pixel.png';
         file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
 
@@ -263,7 +605,8 @@ final class CodexClientTest extends TestCase
 
     public function testViewImageResolvesRelativePathsAgainstConfiguredWorkingDirectory(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory), registerBuiltins: false);
+        $client->registerTool(new ViewImageTool($this->tempDirectory));
         $path = $this->tempDirectory . '/images/pixel.png';
         mkdir(dirname($path), 0777, true);
         file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
@@ -276,7 +619,8 @@ final class CodexClientTest extends TestCase
 
     public function testViewImageResolvesRelativePathsAgainstCurrentWorkingDirectoryWhenNoConfigExists(): void
     {
-        $client = new CodexClient();
+        $client = new CodexClient(registerBuiltins: false);
+        $client->registerTool(new ViewImageTool());
         $workingDirectory = $this->tempDirectory . '/cwd';
         mkdir($workingDirectory, 0777, true);
         $path = $workingDirectory . '/image.png';
@@ -299,7 +643,8 @@ final class CodexClientTest extends TestCase
 
     public function testViewImageFailsForMissingFile(): void
     {
-        $client = new CodexClient();
+        $client = new CodexClient(registerBuiltins: false);
+        $client->registerTool(new ViewImageTool());
 
         $this->expectException(InvalidToolInput::class);
         $this->expectExceptionMessage('was not found');
@@ -313,7 +658,8 @@ final class CodexClientTest extends TestCase
             $this->markTestSkipped('No supported image extension available.');
         }
 
-        $client = new CodexClient();
+        $client = new CodexClient(registerBuiltins: false);
+        $client->registerTool(new ViewImageTool());
         $path = $this->tempDirectory . '/large.png';
         $this->createLargePng($path, 4096, 1024);
 
@@ -325,11 +671,11 @@ final class CodexClientTest extends TestCase
         self::assertSame(512, $result->payload()['final_height']);
     }
 
-    public function testRunCommandReturnsOutput(): void
+    public function testShellReturnsOutput(): void
     {
         $client = new CodexClient();
 
-        $result = $client->runTool('run_command', [
+        $result = $client->runTool('shell', [
             'command' => ['sh', '-c', 'printf "ok"'],
             'cwd' => $this->tempDirectory,
         ]);
@@ -342,11 +688,11 @@ final class CodexClientTest extends TestCase
         self::assertNull($result->payload()['timeout']);
     }
 
-    public function testRunCommandUsesConfiguredWorkingDirectoryByDefault(): void
+    public function testShellUsesConfiguredWorkingDirectoryByDefault(): void
     {
         $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
 
-        $result = $client->runTool('run_command', [
+        $result = $client->runTool('shell', [
             'command' => ['pwd'],
         ]);
 
@@ -355,11 +701,11 @@ final class CodexClientTest extends TestCase
         self::assertSame($this->tempDirectory, $result->payload()['cwd']);
     }
 
-    public function testRunCommandSupportsConfigurableTimeout(): void
+    public function testShellSupportsConfigurableTimeout(): void
     {
         $client = new CodexClient();
 
-        $result = $client->runTool('run_command', [
+        $result = $client->runTool('shell', [
             'command' => ['sh', '-c', 'sleep 1'],
             'cwd' => $this->tempDirectory,
             'timeout' => 0.1,
@@ -371,13 +717,13 @@ final class CodexClientTest extends TestCase
         self::assertSame('Process timed out.', $result->payload()['error']);
     }
 
-    public function testRunCommandRejectsInvalidTimeout(): void
+    public function testShellRejectsInvalidTimeout(): void
     {
         $client = new CodexClient();
 
         $this->expectException(InvalidToolInput::class);
 
-        $client->runTool('run_command', [
+        $client->runTool('shell', [
             'command' => ['pwd'],
             'timeout' => 0,
         ]);
@@ -445,11 +791,24 @@ final class CodexClientTest extends TestCase
         $registry = new ToolRegistry();
         $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory), $registry);
 
+        self::assertTrue($client->hasTool('apply_patch'));
         self::assertTrue($client->hasTool('read_file'));
-        self::assertTrue($client->hasTool('write_file'));
-        self::assertTrue($client->hasTool('run_command'));
-        self::assertTrue($client->hasTool('view_image'));
-        self::assertTrue($client->hasTool('find_files'));
+        self::assertTrue($client->hasTool('search'));
+        self::assertTrue($client->hasTool('shell'));
+    }
+
+    public function testSearchToolSchemaPublishesDepthAndContentsParameters(): void
+    {
+        $client = new CodexClient();
+        $tool = $client->tools()['search'];
+
+        self::assertInstanceOf(SchemaAwareToolInterface::class, $tool);
+
+        $parameters = $tool->parameters();
+
+        self::assertSame('integer', $parameters['properties']['depth']['type']);
+        self::assertSame(0, $parameters['properties']['depth']['minimum']);
+        self::assertSame('string', $parameters['properties']['contents']['type']);
     }
 
     public function testRequestReturnsStructuredResponse(): void
@@ -616,6 +975,10 @@ final class CodexClientTest extends TestCase
                 return new CodexResponse(
                     content: 'hello world',
                     model: 'openai:gpt-5',
+                    toolCalls: [
+                        ['name' => 'read_file', 'arguments' => ['path' => 'composer.json']],
+                        ['name' => 'read_file', 'arguments' => ['path' => 'README.md']],
+                    ],
                     metadata: [
                         'final_response' => [
                             'usage' => [
@@ -648,6 +1011,8 @@ final class CodexClientTest extends TestCase
             'image_generation_input' => 0,
             'image_generation_output' => 0,
             'image_generation_total' => 0,
+            'tool_calls' => 2,
+            'tool_call_details' => ['read_file' => 2],
         ], $client->getRequestTokens()->toArray());
     }
 
@@ -659,6 +1024,9 @@ final class CodexClientTest extends TestCase
                 return new CodexResponse(
                     content: 'final',
                     model: 'openai:gpt-5',
+                    toolCalls: [
+                        ['name' => 'shell', 'arguments' => ['command' => ['pwd']]],
+                    ],
                     metadata: [
                         'final_response' => [
                             'usage' => [
@@ -669,6 +1037,9 @@ final class CodexClientTest extends TestCase
                         ],
                         'request_assistant_messages' => [
                             [
+                                'tool_calls' => [
+                                    ['name' => 'search', 'arguments' => ['path' => '.']],
+                                ],
                                 'metadata' => [
                                     'final_response' => [
                                         'usage' => [
@@ -715,6 +1086,8 @@ final class CodexClientTest extends TestCase
             'image_generation_input' => 100,
             'image_generation_output' => 50,
             'image_generation_total' => 150,
+            'tool_calls' => 2,
+            'tool_call_details' => ['search' => 1, 'shell' => 1],
         ], $client->getRequestTokens()->toArray());
     }
 
@@ -730,6 +1103,9 @@ final class CodexClientTest extends TestCase
                 return new CodexResponse(
                     content: $prompt,
                     model: 'openai:gpt-5',
+                    toolCalls: [
+                        ['name' => 'search', 'arguments' => ['path' => '.']],
+                    ],
                     metadata: [
                         'final_response' => [
                             'usage' => [
@@ -761,6 +1137,8 @@ final class CodexClientTest extends TestCase
             'image_generation_input' => 0,
             'image_generation_output' => 0,
             'image_generation_total' => 0,
+            'tool_calls' => 1,
+            'tool_call_details' => ['search' => 1],
         ], $client->getRequestTokens()->toArray());
     }
 
@@ -839,6 +1217,8 @@ final class CodexClientTest extends TestCase
             'image_generation_input' => 20,
             'image_generation_output' => 40,
             'image_generation_total' => 60,
+            'tool_calls' => 1,
+            'tool_call_details' => ['find_files' => 1],
         ], $client->getSessionTokens()->toArray());
     }
 
@@ -861,6 +1241,9 @@ final class CodexClientTest extends TestCase
                         ],
                         'request_assistant_messages' => [
                             [
+                                'tool_calls' => [
+                                    ['name' => 'shell', 'arguments' => ['command' => ['pwd']]],
+                                ],
                                 'metadata' => [
                                     'final_response' => [
                                         'usage' => [
@@ -901,6 +1284,8 @@ final class CodexClientTest extends TestCase
             'image_generation_input' => 100,
             'image_generation_output' => 50,
             'image_generation_total' => 150,
+            'tool_calls' => 1,
+            'tool_call_details' => ['shell' => 1],
         ], $client->getSessionTokens()->toArray());
     }
 
@@ -968,6 +1353,8 @@ final class CodexClientTest extends TestCase
             'image_generation_input' => 0,
             'image_generation_output' => 0,
             'image_generation_total' => 0,
+            'tool_calls' => 1,
+            'tool_call_details' => ['custom_read' => 1],
         ], $client->getSessionTokens()->toArray());
     }
 

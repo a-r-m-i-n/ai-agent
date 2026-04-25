@@ -42,6 +42,8 @@ final class CodexTokenUsageExtractorTest extends TestCase
             'image_generation_input' => 12,
             'image_generation_output' => 34,
             'image_generation_total' => 46,
+            'tool_calls' => 0,
+            'tool_call_details' => [],
         ], $extractor->fromResponse($response)->toArray());
     }
 
@@ -71,6 +73,8 @@ final class CodexTokenUsageExtractorTest extends TestCase
             'image_generation_input' => 0,
             'image_generation_output' => 0,
             'image_generation_total' => 0,
+            'tool_calls' => 0,
+            'tool_call_details' => [],
         ], $extractor->fromResponse($response)->toArray());
     }
 
@@ -126,6 +130,8 @@ final class CodexTokenUsageExtractorTest extends TestCase
             'image_generation_input' => 10,
             'image_generation_output' => 20,
             'image_generation_total' => 30,
+            'tool_calls' => 0,
+            'tool_call_details' => [],
         ], $extractor->fromResponse($response)->toArray());
     }
 }

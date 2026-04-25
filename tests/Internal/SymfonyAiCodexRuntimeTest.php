@@ -10,6 +10,8 @@ use Armin\CodexPhp\Exception\InvalidSession;
 use Armin\CodexPhp\Exception\ModelDoesNotSupportImageInput;
 use Armin\CodexPhp\Exception\ModelDoesNotSupportImageOutput;
 use Armin\CodexPhp\Internal\SymfonyAiCodexRuntime;
+use Armin\CodexPhp\Tool\Builtin\GenerateImageTool;
+use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
 use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolRegistry;
 use Armin\CodexPhp\Tool\ToolResult;
@@ -389,7 +391,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
 
         $holder = (object) ['inputs' => []];
-        $toolRegistry = ToolRegistry::withBuiltins($this->tempDirectory);
+        $toolRegistry = $this->createRegistryWithOptionalImageTools($this->tempDirectory, withViewImage: true);
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
@@ -466,7 +468,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         file_put_contents($secondPath, $pixel);
 
         $holder = (object) ['inputs' => []];
-        $toolRegistry = ToolRegistry::withBuiltins($this->tempDirectory);
+        $toolRegistry = $this->createRegistryWithOptionalImageTools($this->tempDirectory, withViewImage: true);
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
@@ -612,7 +614,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
                 new BinaryResult('castle-binary', 'image/webp'),
                 new TextResult('Saved to castle.webp'),
             ],
-            toolRegistry: ToolRegistry::withBuiltins($this->tempDirectory),
+            toolRegistry: $this->createRegistryWithOptionalImageTools($this->tempDirectory, withGenerateImage: true),
         );
 
         $response = $runtime->request('Bitte erstelle ein Bild.');
@@ -641,7 +643,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
                 new BinaryResult('river', 'image/png'),
                 new TextResult('done'),
             ],
-            toolRegistry: ToolRegistry::withBuiltins(null),
+            toolRegistry: $this->createRegistryWithOptionalImageTools(null, withGenerateImage: true),
         );
 
         $previousWorkingDirectory = getcwd();
@@ -668,7 +670,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
             results: [
                 new ToolCallResult([new ToolCall('call-1', 'generate_image', ['prompt' => 'Draw a cat'])]),
             ],
-            toolRegistry: ToolRegistry::withBuiltins($this->tempDirectory),
+            toolRegistry: $this->createRegistryWithOptionalImageTools($this->tempDirectory, withGenerateImage: true),
         );
 
         $this->expectException(ModelDoesNotSupportImageOutput::class);
@@ -689,7 +691,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
                 new BinaryResult('tree-binary', 'image/png'),
                 new TextResult('done'),
             ],
-            toolRegistry: ToolRegistry::withBuiltins($this->tempDirectory),
+            toolRegistry: $this->createRegistryWithOptionalImageTools($this->tempDirectory, withGenerateImage: true),
         );
 
         $response = $runtime->request('Erzeuge ein Bild.');
@@ -722,7 +724,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
                 new BinaryResult('tree-binary', 'image/png'),
                 new TextResult('done'),
             ],
-            toolRegistry: ToolRegistry::withBuiltins($this->tempDirectory),
+            toolRegistry: $this->createRegistryWithOptionalImageTools($this->tempDirectory, withGenerateImage: true),
         );
 
         $runtime->request('Erzeuge ein Bild.');
@@ -747,7 +749,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
         $sessionFile = $this->tempDirectory . '/session.json';
         $holder = (object) ['inputs' => []];
-        $toolRegistry = ToolRegistry::withBuiltins($this->tempDirectory);
+        $toolRegistry = $this->createRegistryWithOptionalImageTools($this->tempDirectory, withViewImage: true);
 
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
@@ -775,10 +777,50 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         self::assertStringNotContainsString('data:image', json_encode($payload, JSON_THROW_ON_ERROR));
     }
 
+    public function testSessionIsPersistedIncrementallyBeforeLaterException(): void
+    {
+        $path = $this->tempDirectory . '/image.png';
+        file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
+        $sessionFile = $this->tempDirectory . '/session.json';
+        $holder = (object) ['inputs' => []];
+        $toolRegistry = new ToolRegistry();
+        $toolRegistry->register($this->createTool('view_image', fn (array $input): ToolResult => ToolResult::success([
+            'path' => $input['path'],
+        ])));
+
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT],
+            $holder,
+            sessionFile: $sessionFile,
+            results: [
+                new ToolCallResult([new ToolCall('call-1', 'view_image', ['path' => 'image.png'])]),
+            ],
+            toolRegistry: $toolRegistry,
+        );
+
+        $this->expectException(ModelDoesNotSupportImageInput::class);
+        $this->expectExceptionMessage('does not support image input');
+
+        try {
+            $runtime->request('Analysiere das Bild.');
+        } finally {
+            self::assertFileExists($sessionFile);
+            $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
+
+            self::assertSame(1, $payload['version']);
+            self::assertCount(3, $payload['messages']);
+            self::assertSame(['role' => 'user', 'content' => 'Analysiere das Bild.'], $payload['messages'][0]);
+            self::assertSame('assistant', $payload['messages'][1]['role']);
+            self::assertSame('call-1', $payload['messages'][1]['tool_calls'][0]['id']);
+            self::assertSame('tool', $payload['messages'][2]['role']);
+            self::assertSame('call-1', $payload['messages'][2]['tool_call_id']);
+        }
+    }
+
     public function testMaxToolIterationsThrowsForInfiniteToolLoop(): void
     {
         $holder = (object) ['inputs' => []];
-        $results = array_fill(0, 16, new ToolCallResult([new ToolCall('call-1', 'find_files', ['path' => '/tmp'])]));
+        $results = array_fill(0, 101, new ToolCallResult([new ToolCall('call-1', 'find_files', ['path' => '/tmp'])]));
         $toolRegistry = new ToolRegistry();
         $toolRegistry->register($this->createTool('find_files', static fn (): ToolResult => ToolResult::success(['files' => []])));
 
@@ -793,6 +835,26 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         $this->expectExceptionMessage('Maximum tool iterations exceeded');
 
         $runtime->request('Loop.');
+    }
+
+    public function testMaxToolIterationsAllowsFinalResponseAfterHundredthToolRound(): void
+    {
+        $holder = (object) ['inputs' => []];
+        $results = array_fill(0, 100, new ToolCallResult([new ToolCall('call-1', 'find_files', ['path' => '/tmp'])]));
+        $results[] = new TextResult('final');
+        $toolRegistry = new ToolRegistry();
+        $toolRegistry->register($this->createTool('find_files', static fn (): ToolResult => ToolResult::success(['files' => []])));
+
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            results: $results,
+            toolRegistry: $toolRegistry,
+        );
+
+        $response = $runtime->request('Loop.');
+
+        self::assertSame('final', $response->content());
     }
 
     public function testInvalidSessionFileThrowsClearException(): void
@@ -928,6 +990,24 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
             $toolRegistry ?? new ToolRegistry(),
             platform: $platform,
         );
+    }
+
+    private function createRegistryWithOptionalImageTools(
+        ?string $workingDirectory,
+        bool $withViewImage = false,
+        bool $withGenerateImage = false,
+    ): ToolRegistry {
+        $registry = ToolRegistry::withBuiltins($workingDirectory);
+
+        if ($withViewImage) {
+            $registry->register(new ViewImageTool($workingDirectory));
+        }
+
+        if ($withGenerateImage) {
+            $registry->register(new GenerateImageTool($workingDirectory));
+        }
+
+        return $registry;
     }
 
     /**

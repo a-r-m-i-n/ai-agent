@@ -24,6 +24,21 @@ abstract class AbstractTool
         return $value;
     }
 
+    protected function optionalPositiveInt(array $input, string $key): ?int
+    {
+        if (!array_key_exists($key, $input) || $input[$key] === null) {
+            return null;
+        }
+
+        $value = $input[$key];
+
+        if (!is_int($value) || $value <= 0) {
+            throw new InvalidToolInput(sprintf('The "%s" input must be a positive integer when provided.', $key));
+        }
+
+        return $value;
+    }
+
     protected function resolvePath(string $path): string
     {
         if ($path === '' || $this->workingDirectory === null || $this->workingDirectory === '' || $this->isAbsolutePath($path)) {

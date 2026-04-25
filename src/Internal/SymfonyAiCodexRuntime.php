@@ -29,7 +29,7 @@ use Symfony\AI\Platform\Result\ToolCall;
 
 final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 {
-    private const MAX_TOOL_ITERATIONS = 16;
+    private const MAX_TOOL_ITERATIONS = 100;
 
     public function __construct(
         private readonly CodexConfig $config,
@@ -94,13 +94,15 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 
         if ($sessionStore instanceof CodexSessionStore) {
             $session->appendUserMessage($prompt);
+            $this->persistSession($sessionStore, $session);
         }
 
-        for ($iteration = 0; $iteration < self::MAX_TOOL_ITERATIONS; ++$iteration) {
+        for ($iteration = 0; ; ++$iteration) {
             $response = $this->callModel($platform, $resolvedModel->model(), $resolvedModel->qualifiedName(), $messageBag, $requestOptions);
 
             if ($sessionStore instanceof CodexSessionStore && $response->toolCalls() !== []) {
                 $session->appendAssistantMessage($response->content(), $response->toolCalls(), $response->metadata());
+                $this->persistSession($sessionStore, $session);
             }
 
             if ($response->toolCalls() !== []) {
@@ -113,6 +115,10 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 
             if ($response->toolCalls() === []) {
                 break;
+            }
+
+            if ($iteration >= self::MAX_TOOL_ITERATIONS) {
+                throw new \RuntimeException(sprintf('Maximum tool iterations exceeded (%d).', self::MAX_TOOL_ITERATIONS));
             }
 
             $assistantToolCalls = array_map(
@@ -133,6 +139,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
                 $messageBag->add(Message::ofToolCall($toolCall, $toolResult['message']));
                 if ($sessionStore instanceof CodexSessionStore) {
                     $session->appendToolMessage($toolResult['message'], $toolCall->getId());
+                    $this->persistSession($sessionStore, $session);
                 }
 
                 if ($toolResult['attachment'] instanceof LocalImageAttachment) {
@@ -161,10 +168,6 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             throw new \RuntimeException('The model did not return a response.');
         }
 
-        if ($response->toolCalls() !== []) {
-            throw new \RuntimeException(sprintf('Maximum tool iterations exceeded (%d).', self::MAX_TOOL_ITERATIONS));
-        }
-
         $metadata = $response->metadata();
 
         if ($attachedImagesMetadata !== []) {
@@ -181,7 +184,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 
         if ($sessionStore instanceof CodexSessionStore) {
             $session->appendAssistantMessage($response->content(), $response->toolCalls(), $metadata);
-            $sessionStore->save($session);
+            $this->persistSession($sessionStore, $session);
 
             $metadata['session'] = [
                 'file' => $sessionStore->path(),
@@ -263,6 +266,11 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         }
 
         return new CodexSessionStore($sessionFile);
+    }
+
+    private function persistSession(CodexSessionStore $sessionStore, CodexSession $session): void
+    {
+        $sessionStore->save($session);
     }
 
     private function createMessageBagFromSession(CodexSession $session, string $systemPrompt): MessageBag

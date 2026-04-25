@@ -12,7 +12,7 @@ final class CodexTokenUsageExtractor
 {
     public function fromResponse(CodexResponse $response): CodexTokenUsage
     {
-        return $this->fromMetadata($response->metadata());
+        return $this->fromMetadata($response->metadata(), toolCalls: $response->toolCalls());
     }
 
     public function fromSession(CodexSession $session): CodexTokenUsage
@@ -36,10 +36,14 @@ final class CodexTokenUsageExtractor
                 continue;
             }
 
-            $usage = $usage->withAdded($this->fromMetadata($metadata, includeNestedAssistantMessages: $assistantMessagesSinceLastUser === 0));
+            $toolCalls = $message['tool_calls'] ?? null;
+            $usage = $usage->withAdded($this->fromMetadata(
+                $metadata,
+                includeNestedAssistantMessages: $assistantMessagesSinceLastUser === 0,
+                toolCalls: is_array($toolCalls) ? array_values(array_filter($toolCalls, 'is_array')) : [],
+            ));
             ++$assistantMessagesSinceLastUser;
 
-            $toolCalls = $message['tool_calls'] ?? null;
             if (!is_array($toolCalls) || $toolCalls === []) {
                 $assistantMessagesSinceLastUser = 0;
             }
@@ -50,12 +54,14 @@ final class CodexTokenUsageExtractor
 
     /**
      * @param array<string, mixed> $metadata
+     * @param list<array<string, mixed>> $toolCalls
      */
-    private function fromMetadata(array $metadata, bool $includeNestedAssistantMessages = true): CodexTokenUsage
+    private function fromMetadata(array $metadata, bool $includeNestedAssistantMessages = true, array $toolCalls = []): CodexTokenUsage
     {
         $usage = is_array($metadata['final_response'] ?? null) ? $metadata['final_response'] : [];
         $normalUsage = is_array($usage['usage'] ?? null) ? $usage['usage'] : [];
         $imageUsage = $this->extractImageGenerationUsage($metadata['generated_images'] ?? []);
+        $toolCallUsage = $this->extractToolCallUsage($toolCalls);
         $aggregatedUsage = new CodexTokenUsage(
             input: $this->readInt($normalUsage, 'input_tokens'),
             cachedInput: $this->readNestedInt($normalUsage, ['input_tokens_details', 'cached_tokens']),
@@ -65,14 +71,25 @@ final class CodexTokenUsageExtractor
             imageGenerationInput: $imageUsage['input'],
             imageGenerationOutput: $imageUsage['output'],
             imageGenerationTotal: $imageUsage['total'],
+            toolCalls: $toolCallUsage['count'],
+            toolCallDetails: $toolCallUsage['details'],
         );
 
         if (!$includeNestedAssistantMessages) {
             return $aggregatedUsage;
         }
 
-        foreach ($this->assistantMetadataList($metadata) as $assistantMetadata) {
-            $aggregatedUsage = $aggregatedUsage->withAdded($this->fromMetadata($assistantMetadata));
+        foreach ($this->assistantMessageList($metadata) as $assistantMessage) {
+            $assistantMetadata = $assistantMessage['metadata'] ?? null;
+            if (!is_array($assistantMetadata)) {
+                continue;
+            }
+
+            $nestedToolCalls = $assistantMessage['tool_calls'] ?? null;
+            $aggregatedUsage = $aggregatedUsage->withAdded($this->fromMetadata(
+                $assistantMetadata,
+                toolCalls: is_array($nestedToolCalls) ? array_values(array_filter($nestedToolCalls, 'is_array')) : [],
+            ));
         }
 
         return $aggregatedUsage;
@@ -114,7 +131,7 @@ final class CodexTokenUsageExtractor
      * @param array<string, mixed> $metadata
      * @return list<array<string, mixed>>
      */
-    private function assistantMetadataList(array $metadata): array
+    private function assistantMessageList(array $metadata): array
     {
         $assistantMessages = $metadata['request_assistant_messages'] ?? null;
 
@@ -122,20 +139,37 @@ final class CodexTokenUsageExtractor
             return [];
         }
 
-        $normalized = [];
+        return array_values(array_filter($assistantMessages, 'is_array'));
+    }
 
-        foreach ($assistantMessages as $assistantMessage) {
-            if (!is_array($assistantMessage)) {
+    /**
+     * @param list<array<string, mixed>> $toolCalls
+     * @return array{count: int, details: array<string, int>}
+     */
+    private function extractToolCallUsage(array $toolCalls): array
+    {
+        $details = [];
+
+        foreach ($toolCalls as $toolCall) {
+            $name = $toolCall['name'] ?? null;
+
+            if (!is_string($name) || $name === '') {
                 continue;
             }
 
-            $assistantMetadata = $assistantMessage['metadata'] ?? null;
-            if (is_array($assistantMetadata)) {
-                $normalized[] = $assistantMetadata;
+            if (!isset($details[$name])) {
+                $details[$name] = 0;
             }
+
+            ++$details[$name];
         }
 
-        return $normalized;
+        ksort($details);
+
+        return [
+            'count' => array_sum($details),
+            'details' => $details,
+        ];
     }
 
     /**

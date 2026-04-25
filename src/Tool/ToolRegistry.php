@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Armin\CodexPhp\Tool;
 
+use Armin\CodexPhp\Tool\Builtin\ApplyPatchTool;
 use Armin\CodexPhp\Tool\Builtin\ReadFileTool;
-use Armin\CodexPhp\Tool\Builtin\RunCommandTool;
-use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
-use Armin\CodexPhp\Tool\Builtin\WriteFileTool;
-use Armin\CodexPhp\Tool\Builtin\FindFilesTool;
-use Armin\CodexPhp\Tool\Builtin\GenerateImageTool;
+use Armin\CodexPhp\Tool\Builtin\SearchTool;
+use Armin\CodexPhp\Tool\Builtin\ShellTool;
 use Armin\CodexPhp\Exception\ToolNotFound;
 
 final class ToolRegistry
@@ -60,11 +58,9 @@ final class ToolRegistry
 
     public function registerBuiltins(?string $workingDirectory = null): void
     {
+        $this->register(new ApplyPatchTool($workingDirectory));
         $this->register(new ReadFileTool($workingDirectory));
-        $this->register(new WriteFileTool($workingDirectory));
-        $this->register(new RunCommandTool($workingDirectory));
-        $this->register(new ViewImageTool($workingDirectory));
-        $this->register(new FindFilesTool($workingDirectory));
-        $this->register(new GenerateImageTool($workingDirectory));
+        $this->register(new SearchTool($workingDirectory));
+        $this->register(new ShellTool($workingDirectory));
     }
 }
