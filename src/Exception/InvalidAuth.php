@@ -10,7 +10,7 @@ final class InvalidAuth extends InvalidArgumentException
 {
     public static function invalidAuthMode(string $mode): self
     {
-        return new self(sprintf('Invalid auth configuration. "auth_mode" must be "api_key" or "tokens", got "%s".', $mode));
+        return new self(sprintf('Invalid auth configuration. "auth_mode" must be "api_key", "tokens" or "chatgpt", got "%s".', $mode));
     }
 
     public static function missingAuthModeCredential(string $mode, string $field): self

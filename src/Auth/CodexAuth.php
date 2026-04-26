@@ -10,6 +10,7 @@ final class CodexAuth
 {
     public const MODE_API_KEY = 'api_key';
     public const MODE_TOKENS = 'tokens';
+    public const MODE_CHATGPT = 'chatgpt';
 
     public function __construct(
         private readonly string $authMode = '',
@@ -104,7 +105,7 @@ final class CodexAuth
     {
         return match ($this->authMode) {
             self::MODE_API_KEY => $this->apiKey ?? throw InvalidAuth::missingAuthModeCredential(self::MODE_API_KEY, 'api_key'),
-            self::MODE_TOKENS => $this->tokens?->accessToken() ?? throw InvalidAuth::missingAuthModeCredential(self::MODE_TOKENS, 'tokens'),
+            self::MODE_TOKENS, self::MODE_CHATGPT => $this->tokens?->accessToken() ?? throw InvalidAuth::missingAuthModeCredential($this->authMode, 'tokens'),
         };
     }
 
@@ -152,7 +153,7 @@ final class CodexAuth
 
     private function validate(): void
     {
-        if (!in_array($this->authMode, [self::MODE_API_KEY, self::MODE_TOKENS], true)) {
+        if (!in_array($this->authMode, [self::MODE_API_KEY, self::MODE_TOKENS, self::MODE_CHATGPT], true)) {
             throw InvalidAuth::invalidAuthMode($this->authMode);
         }
 
@@ -160,8 +161,8 @@ final class CodexAuth
             throw InvalidAuth::missingAuthModeCredential(self::MODE_API_KEY, 'api_key');
         }
 
-        if ($this->authMode === self::MODE_TOKENS && $this->tokens === null) {
-            throw InvalidAuth::missingAuthModeCredential(self::MODE_TOKENS, 'tokens');
+        if (in_array($this->authMode, [self::MODE_TOKENS, self::MODE_CHATGPT], true) && $this->tokens === null) {
+            throw InvalidAuth::missingAuthModeCredential($this->authMode, 'tokens');
         }
     }
 }

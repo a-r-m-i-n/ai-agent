@@ -21,7 +21,7 @@ final class AuthResolver
         if ($auth instanceof CodexAuth) {
             return match ($auth->authMode()) {
                 CodexAuth::MODE_API_KEY => new ResolvedAuth('api_key', apiKey: $auth->apiKey()),
-                CodexAuth::MODE_TOKENS => new ResolvedAuth(
+                CodexAuth::MODE_TOKENS, CodexAuth::MODE_CHATGPT => new ResolvedAuth(
                     'tokens',
                     accessToken: $auth->tokens()?->accessToken(),
                     accountId: $auth->tokens()?->accountId(),

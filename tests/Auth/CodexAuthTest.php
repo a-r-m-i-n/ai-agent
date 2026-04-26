@@ -40,6 +40,25 @@ final class CodexAuthTest extends TestCase
         self::assertFalse($auth->hasApiKey());
     }
 
+    public function testFromArrayAcceptsChatGptModeWithoutApiKey(): void
+    {
+        $auth = CodexAuth::fromArray([
+            'auth_mode' => 'chatgpt',
+            'api_key' => null,
+            'tokens' => [
+                'id_token' => 'abc',
+                'access_token' => 'def',
+                'refresh_token' => 'ghi',
+                'account_id' => 'zzz',
+            ],
+        ]);
+
+        self::assertSame('chatgpt', $auth->authMode());
+        self::assertSame('def', $auth->credential());
+        self::assertTrue($auth->hasTokens());
+        self::assertFalse($auth->hasApiKey());
+    }
+
     public function testFromArrayRejectsInvalidAuthMode(): void
     {
         $this->expectException(InvalidAuth::class);

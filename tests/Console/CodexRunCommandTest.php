@@ -335,6 +335,30 @@ final class CodexRunCommandTest extends TestCase
         self::assertSame("Hello from Codex\n", $tester->getDisplay());
     }
 
+    public function testAuthFileProvidesCredentialWhenChatGptModeIsUsed(): void
+    {
+        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+
+        $authFile = $this->createAuthFile([
+            'auth_mode' => 'chatgpt',
+            'api_key' => null,
+            'tokens' => [
+                'id_token' => 'abc',
+                'access_token' => 'def',
+                'refresh_token' => 'ghi',
+                'account_id' => 'zzz',
+            ],
+        ]);
+
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester->execute([
+            'prompt' => 'Say hello',
+            '--auth-file' => $authFile,
+        ]);
+
+        self::assertSame("Hello from Codex\n", $tester->getDisplay());
+    }
+
     public function testKeyOptionOverridesAuthFile(): void
     {
         putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
