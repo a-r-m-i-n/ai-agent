@@ -227,6 +227,15 @@ final class SearchTool extends AbstractTool implements ToolInterface, SchemaAwar
                 continue;
             }
 
+            if (
+                !str_contains($pattern, '*')
+                && !str_contains($pattern, '?')
+                && !str_contains($pattern, '[')
+                && str_starts_with($relativePath, $pattern . '/')
+            ) {
+                return true;
+            }
+
             if ($relativePath === $pattern || fnmatch($pattern, $relativePath)) {
                 return true;
             }

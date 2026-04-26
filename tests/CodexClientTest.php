@@ -543,6 +543,25 @@ final class CodexClientTest extends TestCase
         self::assertSame("needle\nvisible", $result->payload()['results'][0]['contents']);
     }
 
+    public function testSearchIgnoresDirectoryPatternsWithoutTrailingSlash(): void
+    {
+        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        file_put_contents($this->tempDirectory . '/.gitignore', "/vendor\n");
+        mkdir($this->tempDirectory . '/src', 0777, true);
+        mkdir($this->tempDirectory . '/vendor/bin', 0777, true);
+        file_put_contents($this->tempDirectory . '/src/visible.txt', 'needle');
+        file_put_contents($this->tempDirectory . '/vendor/bin/hidden.txt', 'needle');
+
+        $result = $client->runTool('search', [
+            'path' => '.',
+            'query' => 'needle',
+        ]);
+
+        self::assertTrue($result->isSuccess());
+        self::assertSame(1, $result->payload()['count']);
+        self::assertSame($this->tempDirectory . '/src/visible.txt', $result->payload()['results'][0]['path']);
+    }
+
     public function testSearchReturnsFailureForMissingDirectory(): void
     {
         $client = new CodexClient();

@@ -7,6 +7,7 @@ namespace Armin\CodexPhp\Internal;
 use Armin\CodexPhp\CodexConfig;
 use Armin\CodexPhp\Tool\ToolRegistry;
 use Symfony\Component\Finder\Finder;
+use Symfony\Component\Process\Process;
 
 final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
 {
@@ -140,6 +141,15 @@ final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
         $directories = [];
         foreach ($finder as $directory) {
             $relativePath = $directory->getRelativePathname();
+            if (
+                $relativePath === '.git'
+                || str_starts_with($relativePath, '.git/')
+                || $relativePath === '.ddev'
+                || str_starts_with($relativePath, '.ddev/')
+            ) {
+                continue;
+            }
+
             if ($this->isIgnoredByGitignore($relativePath, $ignoredPatterns)) {
                 continue;
             }
@@ -219,7 +229,55 @@ final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
             $hints[] = 'Review `README.md` for project-specific workflows and conventions in addition to direct repo instructions.';
         }
 
+        $gitSummary = $this->summarizeGitRepository($workingDirectory);
+        if ($gitSummary !== null) {
+            $hints[] = $gitSummary;
+        }
+
         return $hints;
+    }
+
+    private function summarizeGitRepository(string $workingDirectory): ?string
+    {
+        if (!is_dir($workingDirectory . '/.git')) {
+            return null;
+        }
+
+        $branch = $this->runGitCommand($workingDirectory, ['git', 'branch', '--show-current']);
+        if ($branch === null || $branch === '') {
+            $branch = $this->runGitCommand($workingDirectory, ['git', 'rev-parse', '--short', 'HEAD']);
+        }
+
+        $branchLabel = $branch !== null && $branch !== '' ? sprintf('current branch `%s`', $branch) : 'current branch unknown';
+        $hasStagedChanges = $this->hasStagedChanges($workingDirectory);
+
+        return sprintf(
+            'Git repository detected; %s; staged uncommitted changes: %s.',
+            $branchLabel,
+            $hasStagedChanges ? 'yes' : 'no',
+        );
+    }
+
+    private function hasStagedChanges(string $workingDirectory): bool
+    {
+        $process = new Process(['git', 'diff', '--cached', '--quiet', '--exit-code'], $workingDirectory);
+        $process->run();
+
+        return $process->getExitCode() === 1;
+    }
+
+    private function runGitCommand(string $workingDirectory, array $command): ?string
+    {
+        $process = new Process($command, $workingDirectory);
+        $process->run();
+
+        if (!$process->isSuccessful()) {
+            return null;
+        }
+
+        $output = trim($process->getOutput());
+
+        return $output !== '' ? $output : null;
     }
 
     private function summarizeComposerManifest(string $path): ?string
@@ -326,6 +384,15 @@ final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
                 }
 
                 continue;
+            }
+
+            if (
+                !str_contains($pattern, '*')
+                && !str_contains($pattern, '?')
+                && !str_contains($pattern, '[')
+                && str_starts_with($relativePath, $pattern . '/')
+            ) {
+                return true;
             }
 
             if ($relativePath === $pattern || fnmatch($pattern, $relativePath)) {

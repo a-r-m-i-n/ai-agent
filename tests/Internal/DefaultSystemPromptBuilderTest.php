@@ -11,6 +11,7 @@ use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolRegistry;
 use Armin\CodexPhp\Tool\ToolResult;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 
 final class DefaultSystemPromptBuilderTest extends TestCase
 {
@@ -102,7 +103,7 @@ final class DefaultSystemPromptBuilderTest extends TestCase
         self::assertStringContainsString('Repository context:', $prompt);
         self::assertStringContainsString('Working directory: ' . $this->tempDirectory, $prompt);
         self::assertStringContainsString('Root files: .gitignore, AGENTS.md, README.md, composer.json, phpunit.xml.dist, visible.txt', $prompt);
-        self::assertStringContainsString('Directories (depth <= 2): .ddev, bin, src, src/Nested', $prompt);
+        self::assertStringContainsString('Directories (depth <= 2): bin, src, src/Nested', $prompt);
         self::assertStringContainsString('DDEV is configured here. Default to running project commands via `ddev exec`.', $prompt);
         self::assertStringContainsString('Composer manifest detected for a PHP project; package `acme/example`; PHP ^8.4; binaries: bin/codex; scripts: test.', $prompt);
         self::assertStringContainsString('PHPUnit configuration is present.', $prompt);
@@ -110,6 +111,52 @@ final class DefaultSystemPromptBuilderTest extends TestCase
         self::assertStringNotContainsString('ignored-dir', $prompt);
         self::assertStringContainsString('Repository instructions:', $prompt);
         self::assertStringContainsString('# Repo Rules', $prompt);
+    }
+
+    public function testBuildIgnoresDirectoryPatternsWithoutTrailingSlash(): void
+    {
+        file_put_contents($this->tempDirectory . '/.gitignore', "/vendor\n");
+        mkdir($this->tempDirectory . '/src', 0777, true);
+        mkdir($this->tempDirectory . '/vendor/bin', 0777, true);
+
+        $builder = new DefaultSystemPromptBuilder(new CodexConfig(workingDirectory: $this->tempDirectory), new ToolRegistry());
+        $prompt = $builder->build();
+
+        self::assertStringContainsString('Directories (depth <= 2): src', $prompt);
+        self::assertStringNotContainsString('vendor', $prompt);
+        self::assertStringNotContainsString('vendor/bin', $prompt);
+    }
+
+    public function testBuildOmitsGitDirectoryAndAddsGitSummary(): void
+    {
+        mkdir($this->tempDirectory . '/src', 0777, true);
+        file_put_contents($this->tempDirectory . '/src/example.php', '<?php');
+
+        $this->runGit($this->tempDirectory, ['git', 'init', '-b', 'main']);
+        $this->runGit($this->tempDirectory, ['git', 'config', 'user.name', 'Codex Tests']);
+        $this->runGit($this->tempDirectory, ['git', 'config', 'user.email', 'codex@example.invalid']);
+        $this->runGit($this->tempDirectory, ['git', 'add', 'src/example.php']);
+
+        $builder = new DefaultSystemPromptBuilder(new CodexConfig(workingDirectory: $this->tempDirectory), new ToolRegistry());
+        $prompt = $builder->build();
+
+        self::assertStringContainsString('Directories (depth <= 2): src', $prompt);
+        self::assertStringNotContainsString('.git,', $prompt);
+        self::assertStringNotContainsString('.git/', $prompt);
+        self::assertStringContainsString('Git repository detected; current branch `main`; staged uncommitted changes: yes.', $prompt);
+    }
+
+    public function testBuildOmitsDdevDirectoryButKeepsDdevHint(): void
+    {
+        mkdir($this->tempDirectory . '/.ddev/commands', 0777, true);
+        mkdir($this->tempDirectory . '/src', 0777, true);
+
+        $builder = new DefaultSystemPromptBuilder(new CodexConfig(workingDirectory: $this->tempDirectory), new ToolRegistry());
+        $prompt = $builder->build();
+
+        self::assertStringContainsString('Directories (depth <= 2): src', $prompt);
+        self::assertStringNotContainsString('.ddev', $prompt);
+        self::assertStringContainsString('DDEV is configured here. Default to running project commands via `ddev exec`.', $prompt);
     }
 
     public function testBuildAppendsCustomPromptByDefault(): void
@@ -127,5 +174,16 @@ final class DefaultSystemPromptBuilderTest extends TestCase
         $builder = new DefaultSystemPromptBuilder(new CodexConfig(systemPrompt: 'Only this prompt.', systemPromptMode: 'replace'), new ToolRegistry());
 
         self::assertSame('Only this prompt.', $builder->build());
+    }
+
+    /**
+     * @param list<string> $command
+     */
+    private function runGit(string $workingDirectory, array $command): void
+    {
+        $process = new Process($command, $workingDirectory);
+        $process->run();
+
+        self::assertTrue($process->isSuccessful(), $process->getErrorOutput());
     }
 }
