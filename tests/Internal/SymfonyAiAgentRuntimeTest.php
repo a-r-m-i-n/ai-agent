@@ -226,6 +226,48 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertSame('generated-binary', file_get_contents($this->tempDirectory . '/cat.jpg'));
     }
 
+    public function testDirectoryMentionWithSingleImageCreatesMultimodalInputAndStoresOutputNextToSource(): void
+    {
+        mkdir($this->tempDirectory . '/test_file', 0777, true);
+        $path = $this->tempDirectory . '/test_file/cat.png';
+        file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
+
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            results: [
+                new TextResult(''),
+            ],
+            metadata: [
+                'provider' => 'test',
+                'final_response' => [
+                    'tool_usage' => [
+                        'image_gen' => [
+                            'input_tokens' => 10,
+                            'output_tokens' => 20,
+                            'total_tokens' => 30,
+                        ],
+                    ],
+                ],
+                'stream_events' => [[
+                    'type' => 'response.image_generation_call.partial_image',
+                    'partial_image_b64' => base64_encode('generated-binary'),
+                    'output_format' => 'png',
+                ]],
+            ],
+        );
+
+        $response = $runtime->request("Im Ordner 'test_file' liegt ein Bild ab. Bitte lade dieses Bild und erstelle mir ein neues Bild mit dem Namen 'cat_art' im selben Verzeichnis.");
+
+        $userMessage = $holder->inputs[0]->getUserMessage();
+        self::assertNotNull($userMessage);
+        self::assertTrue($userMessage->hasImageContent());
+        self::assertSame($path, $response->metadata()['attached_images'][0]['path']);
+        self::assertSame($this->tempDirectory . '/test_file/cat_art.png', $response->generatedImages()[0]['path']);
+        self::assertSame('generated-binary', file_get_contents($this->tempDirectory . '/test_file/cat_art.png'));
+    }
+
     public function testStructuredRequestStillReturnsJsonTextInAiAgentResponse(): void
     {
         $holder = (object) ['inputs' => [], 'options' => []];

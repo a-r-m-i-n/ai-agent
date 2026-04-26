@@ -191,6 +191,19 @@ final class DefaultSystemPromptBuilderTest extends TestCase
         self::assertStringNotContainsString('Use hosted image generation when the user asks to create or edit images.', $prompt);
     }
 
+    public function testBuildDescribesConcreteImageRequirementForHostedImageGeneration(): void
+    {
+        $builder = new DefaultSystemPromptBuilder(new AiAgentConfig(), new ToolRegistry());
+
+        $prompt = $builder->build([
+            'hosted_tools' => [
+                'enabled' => ['image_generation'],
+            ],
+        ]);
+
+        self::assertStringContainsString('load a concrete image file first; directory paths are not valid image inputs.', $prompt);
+    }
+
     public function testBuildOmitsHostedProviderSectionWhenNothingIsEnabled(): void
     {
         $builder = new DefaultSystemPromptBuilder(new AiAgentConfig(), new ToolRegistry());

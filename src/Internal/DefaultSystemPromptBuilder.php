@@ -74,7 +74,7 @@ final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
         }
 
         if (in_array('image_generation', $hostedTools, true)) {
-            $lines[] = '- Use hosted image generation when the user asks to create or edit images.';
+            $lines[] = '- Use hosted image generation when the user asks to create or edit images. For edits or transformations, load a concrete image file first; directory paths are not valid image inputs.';
         }
 
         return \count($lines) > 1 ? implode("\n", $lines) : null;

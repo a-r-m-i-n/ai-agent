@@ -55,8 +55,11 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
         $resolvedModel = $this->modelNameParser->parse($model);
         $resolvedAuth = $this->authResolver->resolve($this->config);
         $platform = $this->platform ?? $this->createPlatform($resolvedModel->provider(), $resolvedAuth);
-        $attachments = ($this->imageAttachmentResolver ?? new LocalImageAttachmentResolver($this->config->workingDirectory()))
-            ->detectFromPrompt($prompt);
+        $imageAttachmentResolver = $this->imageAttachmentResolver ?? new LocalImageAttachmentResolver($this->config->workingDirectory());
+        $attachments = $imageAttachmentResolver->detectFromPrompt($prompt);
+        if ($attachments === []) {
+            $attachments = $imageAttachmentResolver->detectFromDirectoryMentions($prompt);
+        }
         $sessionStore = $this->createSessionStore();
         $session = $sessionStore?->load() ?? new AgentSession();
         $loadedMessageCount = $session->count();

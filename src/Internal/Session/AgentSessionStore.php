@@ -239,7 +239,7 @@ final class AgentSessionStore
 
     /**
      * @param mixed $generatedImages
-     * @return list<array{provider_response: array{tool_usage: array{image_gen: array<string, mixed>}}}>
+     * @return list<array<string, mixed>>
      */
     private function sanitizeGeneratedImages(mixed $generatedImages): array
     {
@@ -259,13 +259,21 @@ final class AgentSessionStore
                 continue;
             }
 
-            $sanitizedImages[] = [
+            $sanitizedImage = [
                 'provider_response' => [
                     'tool_usage' => [
                         'image_gen' => $imageUsage,
                     ],
                 ],
             ];
+
+            foreach (['path', 'filename', 'mime_type', 'extension', 'size', 'provider', 'model', 'revised_prompt'] as $field) {
+                if (isset($generatedImage[$field]) && (is_string($generatedImage[$field]) || is_int($generatedImage[$field]))) {
+                    $sanitizedImage[$field] = $generatedImage[$field];
+                }
+            }
+
+            $sanitizedImages[] = $sanitizedImage;
         }
 
         return $sanitizedImages;

@@ -145,20 +145,39 @@ final class HostedImageGenerationPersister
             $defaultDirectory = getcwd() ?: '.';
         }
 
-        if (
-            preg_match('/im selben ordner|same folder/i', $prompt) === 1
-            && $attachedImages !== []
-            && is_string($attachedImages[0]['path'] ?? null)
-        ) {
+        if ($this->shouldUseAttachedImageDirectory($prompt, $attachedImages)) {
             return dirname($attachedImages[0]['path']);
         }
 
         return $defaultDirectory;
     }
 
+    /**
+     * @param list<array<string, mixed>> $attachedImages
+     */
+    private function shouldUseAttachedImageDirectory(string $prompt, array $attachedImages): bool
+    {
+        if ($attachedImages === [] || !is_string($attachedImages[0]['path'] ?? null)) {
+            return false;
+        }
+
+        if (preg_match('/im selben ordner|im gleichen ordner|same folder|same directory/i', $prompt) === 1) {
+            return true;
+        }
+
+        return $this->extractFilenameFromPrompt($prompt) !== null;
+    }
+
     private function extractFilenameFromPrompt(string $prompt): ?string
     {
         if (preg_match("/['\"]([^'\"\\n\\r]+\\.(?:png|jpe?g|webp|gif|bmp))['\"]/i", $prompt, $matches) === 1) {
+            return basename($matches[1]);
+        }
+
+        if (
+            preg_match('/(?:name|namen)\s+["\']?([^"\'\s\/\\\\]+)["\']?/iu', $prompt, $matches) === 1
+            && isset($matches[1])
+        ) {
             return basename($matches[1]);
         }
 

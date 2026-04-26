@@ -133,7 +133,7 @@ Structured output currently supports DTO classes only. If the class does not exi
 
 ## Image Generation
 
-Image generation also goes through the same `request()` API. If the model decides to create a new image, it uses the internal `generate_image` tool, stores the file locally, and still returns a normal text response:
+Image generation also goes through the same `request()` API. If hosted image generation is enabled and the provider supports it, the runtime can ask the provider to create or transform an image, stores the file locally, and still returns a normal text response:
 
 ```php
 <?php
@@ -146,11 +146,9 @@ print_r($response->generatedImages());
 
 Generated images are stored in the configured `workingDirectory`. If no `workingDirectory` is configured, the current `getcwd()` is used.
 
-When no explicit filename is provided, the runtime creates one like `new_image_<hash>.<ext>`. If the target filename has no extension, the provider output format is kept.
+When no explicit filename is provided, the runtime creates one like `generated_image_<hash>.<ext>`. If the target filename has no extension, the provider output format is kept.
 
-If the target file already exists, it is overwritten by default. When the model sets `overwrite=false`, the runtime writes a unique alternative filename instead.
-
-This requires a model with Symfony AI `Capability::OUTPUT_IMAGE`; there is no automatic switch to a separate image model.
+For image transformations, the runtime can attach local image files as real multimodal inputs when the selected model supports image input. If the prompt names a target filename and an input image is attached, the generated file is stored next to that input image by default.
 
 ## Sessions and Token Usage
 
@@ -260,7 +258,6 @@ $client = new AiAgentClient(registerBuiltins: false);
 - `find_files`
 - `write_file`
 - `view_image`
-- `generate_image`
 - `run_command`
 
 These tools are available both through `runTool()` and as callable tools during model execution. Their descriptions are also included automatically in the generated system prompt.

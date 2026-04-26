@@ -10,6 +10,7 @@ use Symfony\Component\Finder\Finder;
 final class LocalImageAttachmentResolver
 {
     private const MAX_DIMENSION = 2048;
+    private const SUPPORTED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
 
     /**
      * @var array<string, string>
@@ -111,6 +112,52 @@ final class LocalImageAttachmentResolver
         return $attachments;
     }
 
+    /**
+     * @return list<LocalImageAttachment>
+     */
+    public function detectFromDirectoryMentions(string $prompt): array
+    {
+        preg_match_all('/[\'"]([^\'"\n\r]+)[\'"]/', $prompt, $quotedMatches);
+        preg_match_all('/(?:im|in|inside|within)\s+(?:dem\s+)?(?:ordner|verzeichnis|directory|folder)\s+([^\s,.;:!?]+)/iu', $prompt, $inlineMatches);
+
+        $candidates = [];
+        foreach ([$quotedMatches[1] ?? [], $inlineMatches[1] ?? []] as $matches) {
+            foreach ($matches as $match) {
+                $candidate = trim(rtrim((string) $match, ".,;:!?)]}'\""));
+                if ($candidate !== '') {
+                    $candidates[] = $candidate;
+                }
+            }
+        }
+
+        $attachments = [];
+        $seen = [];
+
+        foreach (array_values(array_unique($candidates)) as $candidate) {
+            $resolvedPath = $this->resolvePath($candidate);
+
+            if (!is_dir($resolvedPath)) {
+                continue;
+            }
+
+            $files = $this->findSupportedImageFiles($resolvedPath);
+
+            if (\count($files) !== 1) {
+                continue;
+            }
+
+            $uniqueKey = realpath($files[0]) ?: $files[0];
+            if (isset($seen[$uniqueKey])) {
+                continue;
+            }
+
+            $attachments[] = $this->resolve($files[0]);
+            $seen[$uniqueKey] = true;
+        }
+
+        return $attachments;
+    }
+
     private function isReadableFile(string $path): bool
     {
         $directory = dirname($path);
@@ -142,6 +189,28 @@ final class LocalImageAttachmentResolver
         }
 
         return rtrim($workingDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $path;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function findSupportedImageFiles(string $directory): array
+    {
+        $finder = new Finder();
+        $finder
+            ->files()
+            ->in($directory)
+            ->depth('== 0')
+            ->ignoreDotFiles(false)
+            ->name('/\.(' . implode('|', self::SUPPORTED_EXTENSIONS) . ')$/i')
+            ->sortByName();
+
+        $paths = [];
+        foreach ($finder as $file) {
+            $paths[] = $file->getPathname();
+        }
+
+        return $paths;
     }
 
     private function isAbsolutePath(string $path): bool
