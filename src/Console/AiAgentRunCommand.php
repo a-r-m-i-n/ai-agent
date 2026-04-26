@@ -129,10 +129,13 @@ final class AiAgentRunCommand extends Command
             throw MissingModel::forEnvVar($effectiveConfig->modelEnvVar());
         }
 
-        if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE) {
+        if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERY_VERBOSE) {
             $io->writeln('<fg=gray>System prompt:</>');
             $this->writeDiagnosticBlock($io, $this->buildSystemPrompt($effectiveConfig));
             $io->newLine();
+        }
+
+        if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE) {
             $io->writeln('<fg=gray>User prompt:</>');
             $this->writeDiagnosticBlock($io, $prompt);
             $io->newLine();

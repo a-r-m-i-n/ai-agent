@@ -106,7 +106,7 @@ final class AiAgentRunCommandTest extends TestCase
         self::assertSame($prompt . "\n", $tester->getDisplay());
     }
 
-    public function testVerboseExecutionPrintsSystemPromptUserPromptOutputAndStatistics(): void
+    public function testVerboseExecutionPrintsUserPromptOutputAndStatisticsWithoutSystemPrompt(): void
     {
         putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
         putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
@@ -143,10 +143,10 @@ final class AiAgentRunCommandTest extends TestCase
         $display = $tester->getDisplay();
         $rawDisplay = $tester->getDisplay(true);
 
-        self::assertStringContainsString('System prompt:', $display);
-        self::assertStringContainsString('Available tools:', $display);
-        self::assertStringContainsString('Repository context:', $display);
-        self::assertStringContainsString('Working directory: ' . getcwd(), $display);
+        self::assertStringNotContainsString('System prompt:', $display);
+        self::assertStringNotContainsString('Available tools:', $display);
+        self::assertStringNotContainsString('Repository context:', $display);
+        self::assertStringNotContainsString('Working directory: ' . getcwd(), $display);
         self::assertStringContainsString('User prompt:', $display);
         self::assertStringContainsString('Say hello', $display);
         self::assertStringContainsString('Output:', $display);
@@ -169,7 +169,7 @@ final class AiAgentRunCommandTest extends TestCase
         self::assertMatchesRegularExpression('/\x1b\[[0-9;]*33;1m12\.444 \(1,2%\)\x1b\[[0-9;]*m/', $rawDisplay);
     }
 
-    public function testVeryVerboseExecutionMatchesVerboseStructure(): void
+    public function testVeryVerboseExecutionAlsoPrintsSystemPrompt(): void
     {
         putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
         putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
@@ -200,7 +200,7 @@ final class AiAgentRunCommandTest extends TestCase
         self::assertStringContainsString('tool_call_details', $display);
     }
 
-    public function testDebugVerbosityMatchesVerboseBehavior(): void
+    public function testDebugVerbosityIncludesSystemPrompt(): void
     {
         putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
         putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
@@ -487,7 +487,7 @@ final class AiAgentRunCommandTest extends TestCase
 
         $display = $tester->getDisplay();
 
-        self::assertStringContainsString('System prompt:', $display);
+        self::assertStringNotContainsString('System prompt:', $display);
         self::assertStringContainsString('User prompt:', $display);
         self::assertStringContainsString('Output:', $display);
         self::assertStringContainsString('Statistics:', $display);
