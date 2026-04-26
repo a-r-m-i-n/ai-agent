@@ -221,6 +221,258 @@ final class CodexRunCommandTest extends TestCase
         self::assertStringContainsString('Statistics:', $display);
     }
 
+    public function testDebugSystemPromptOutputsOnlyBuiltPromptWithoutClientRequest(): void
+    {
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester->execute([
+            'prompt' => 'Say hello',
+            '--debug' => 'system_prompt',
+        ]);
+
+        $display = $tester->getDisplay();
+
+        self::assertStringContainsString('Available tools:', $display);
+        self::assertStringContainsString('Repository context:', $display);
+        self::assertStringContainsString('Working directory: ' . getcwd(), $display);
+        self::assertStringNotContainsString('Hello from Codex', $display);
+        self::assertStringNotContainsString('Statistics:', $display);
+    }
+
+    public function testDebugStatisticsOutputsSessionTableWithoutRequestColumnOrClientRequest(): void
+    {
+        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        $this->temporaryFiles[] = $sessionFile;
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                [
+                    'role' => 'assistant',
+                    'content' => 'First response',
+                    'tool_calls' => [
+                        ['name' => 'read_file', 'arguments' => ['path' => '/tmp/one.txt']],
+                    ],
+                    'metadata' => [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 1000,
+                                'output_tokens' => 100,
+                                'total_tokens' => 1100,
+                            ],
+                        ],
+                    ],
+                ],
+                [
+                    'role' => 'assistant',
+                    'content' => 'Second response',
+                    'tool_calls' => [
+                        ['name' => 'search', 'arguments' => ['query' => 'test']],
+                    ],
+                    'metadata' => [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 2000,
+                                'input_tokens_details' => ['cached_tokens' => 500],
+                                'output_tokens' => 200,
+                                'output_tokens_details' => ['reasoning_tokens' => 25],
+                                'total_tokens' => 2200,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester->execute([
+            'prompt' => 'Say hello',
+            '--session-file' => $sessionFile,
+            '--model' => 'openai:gpt-5',
+            '--debug' => 'stats',
+        ], [
+            'decorated' => true,
+        ]);
+
+        $display = $tester->getDisplay();
+
+        self::assertStringContainsString('Statistics:', $display);
+        self::assertStringContainsString('Metric', $display);
+        self::assertStringContainsString('Session', $display);
+        self::assertStringNotContainsString('Request', $display);
+        self::assertStringContainsString('3.300', $display);
+        self::assertStringContainsString('read_file:1, search:1', $display);
+        self::assertStringNotContainsString('Hello from Codex', $display);
+    }
+
+    public function testDebugRejectsUnsupportedMode(): void
+    {
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid debug mode "invalid"');
+
+        $tester->execute([
+            'prompt' => 'Say hello',
+            '--debug' => 'invalid',
+        ]);
+    }
+
+    public function testDebugHistoryOutputsRequestsResponsesAndToolCallsFromSession(): void
+    {
+        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        $this->temporaryFiles[] = $sessionFile;
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => 'First prompt',
+                ],
+                [
+                    'role' => 'assistant',
+                    'content' => '',
+                    'tool_calls' => [
+                        ['id' => 'call-1', 'name' => 'read_file', 'arguments' => ['path' => 'README.md']],
+                    ],
+                ],
+                [
+                    'role' => 'tool',
+                    'content' => '{"success":true}',
+                    'tool_call_id' => 'call-1',
+                ],
+                [
+                    'role' => 'assistant',
+                    'content' => 'Final answer one',
+                ],
+                [
+                    'role' => 'assistant',
+                    'content' => '',
+                    'tool_calls' => [
+                        ['id' => 'call-2', 'name' => 'search', 'arguments' => ['query' => 'package name']],
+                    ],
+                ],
+                [
+                    'role' => 'tool',
+                    'content' => '{"success":true}',
+                    'tool_call_id' => 'call-2',
+                ],
+                [
+                    'role' => 'assistant',
+                    'content' => 'Final answer two',
+                ],
+                [
+                    'role' => 'user',
+                    'content' => 'Second prompt',
+                ],
+                [
+                    'role' => 'assistant',
+                    'content' => 'Final answer three',
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester->execute([
+            'prompt' => 'Ignored prompt',
+            '--session-file' => $sessionFile,
+            '--debug' => 'history',
+        ]);
+
+        $display = $tester->getDisplay();
+
+        self::assertStringContainsString('Request 1', $display);
+        self::assertStringContainsString('User prompt:', $display);
+        self::assertStringContainsString('First prompt', $display);
+        self::assertStringContainsString('Response 1:', $display);
+        self::assertStringContainsString('Response 2:', $display);
+        self::assertStringContainsString('Response:', $display);
+        self::assertStringContainsString('Tool calls:', $display);
+        self::assertStringContainsString('read_file [call-1] {"path":"README.md"}', $display);
+        self::assertStringContainsString('search [call-2] {"query":"package name"}', $display);
+        self::assertStringContainsString('Final answer two', $display);
+        self::assertStringContainsString('Request 2', $display);
+        self::assertStringContainsString('Second prompt', $display);
+        self::assertStringContainsString('Final answer three', $display);
+        self::assertStringNotContainsString('Hello from Codex', $display);
+        self::assertStringNotContainsString('Tool result:', $display);
+        self::assertStringNotContainsString('tool_call_id: call-1', $display);
+        self::assertStringNotContainsString('{"success":true}', $display);
+        self::assertStringNotContainsString('Content:', $display);
+    }
+
+    public function testDebugHistoryRequiresSessionFileOption(): void
+    {
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Debug mode "history" requires --session-file.');
+
+        $tester->execute([
+            'prompt' => 'Say hello',
+            '--debug' => 'history',
+        ]);
+    }
+
+    public function testDebugHistoryRequiresExistingSessionFile(): void
+    {
+        $missingSessionFile = sys_get_temp_dir() . '/codex-missing-session-' . bin2hex(random_bytes(4)) . '.json';
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Debug mode "history" requires an existing session file.');
+
+        $tester->execute([
+            'prompt' => 'Say hello',
+            '--session-file' => $missingSessionFile,
+            '--debug' => 'history',
+        ]);
+    }
+
+    public function testDebugHistoryFallsBackToFinalResponseTextWhenAssistantContentIsEmpty(): void
+    {
+        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        $this->temporaryFiles[] = $sessionFile;
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => 'Prompt',
+                ],
+                [
+                    'role' => 'assistant',
+                    'content' => '',
+                    'metadata' => [
+                        'final_response' => [
+                            'output' => [
+                                [
+                                    'type' => 'message',
+                                    'content' => [
+                                        [
+                                            'type' => 'output_text',
+                                            'text' => 'Recovered final answer',
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester->execute([
+            'prompt' => 'Ignored prompt',
+            '--session-file' => $sessionFile,
+            '--debug' => 'history',
+        ]);
+
+        $display = $tester->getDisplay();
+
+        self::assertStringContainsString('Response:', $display);
+        self::assertStringContainsString('Recovered final answer', $display);
+    }
+
     public function testVerboseExecutionHidesRowsWhenRequestAndSessionTokensAreBothZero(): void
     {
         putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
@@ -531,6 +783,23 @@ final class CodexRunCommandTest extends TestCase
                         ],
                     ],
                 );
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                throw new \BadMethodCallException('not used');
+            }
+        };
+
+        return new CodexClient(runtime: $runtime);
+    }
+
+    private function createFailingClientStub(): CodexClient
+    {
+        $runtime = new class implements CodexRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+            {
+                throw new \RuntimeException('Client request must not be executed.');
             }
 
             public function requestStructured(string $prompt, string $responseClass): object

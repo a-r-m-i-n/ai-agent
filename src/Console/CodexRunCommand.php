@@ -10,10 +10,12 @@ use Armin\CodexPhp\CodexConfig;
 use Armin\CodexPhp\CodexTokenUsage;
 use Armin\CodexPhp\Exception\MissingModel;
 use Armin\CodexPhp\Internal\AuthResolver;
+use Armin\CodexPhp\Internal\CodexTokenUsageExtractor;
 use Armin\CodexPhp\Internal\ContextUsageFormatter;
 use Armin\CodexPhp\Internal\DefaultSystemPromptBuilder;
 use Armin\CodexPhp\Internal\ModelMetadata;
 use Armin\CodexPhp\Internal\ModelMetadataRegistry;
+use Armin\CodexPhp\Internal\Session\CodexSessionStore;
 use Armin\CodexPhp\Internal\TokenCostCalculator;
 use Armin\CodexPhp\Tool\ToolRegistry;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -52,7 +54,8 @@ final class CodexRunCommand extends Command
             ->addOption('model', null, InputOption::VALUE_REQUIRED, 'The model to use.')
             ->addOption('key', null, InputOption::VALUE_REQUIRED, 'The API key to use.')
             ->addOption('auth-file', null, InputOption::VALUE_REQUIRED, 'Path to an auth.json file.')
-            ->addOption('session-file', null, InputOption::VALUE_REQUIRED, 'Path to a JSON file used to persist session history.');
+            ->addOption('session-file', null, InputOption::VALUE_REQUIRED, 'Path to a JSON file used to persist session history.')
+            ->addOption('debug', null, InputOption::VALUE_REQUIRED, 'Debug mode: "system_prompt", "statistics", or "stats".');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -64,6 +67,7 @@ final class CodexRunCommand extends Command
         $keyOption = $input->getOption('key');
         $authFileOption = $input->getOption('auth-file');
         $sessionFileOption = $input->getOption('session-file');
+        $debugOption = $input->getOption('debug');
         $auth = is_string($authFileOption) && $authFileOption !== ''
             ? $this->authFileLoader->load($authFileOption)
             : null;
@@ -93,6 +97,31 @@ final class CodexRunCommand extends Command
         }
 
         $effectiveConfig = $this->withDefaultWorkingDirectory($config);
+        $debugMode = $this->resolveDebugMode($debugOption);
+
+        if ($debugMode === 'system_prompt') {
+            $io->writeln($this->buildSystemPrompt($effectiveConfig));
+
+            return Command::SUCCESS;
+        }
+
+        if ($debugMode === 'statistics') {
+            $io->writeln('<fg=gray>Statistics:</>');
+            $this->writeSessionDiagnostics(
+                $io,
+                $this->readSessionUsage($effectiveConfig->sessionFile()),
+                $this->modelMetadataRegistry->find($effectiveConfig->model() ?? ''),
+            );
+
+            return Command::SUCCESS;
+        }
+
+        if ($debugMode === 'history') {
+            $this->writeSessionHistory($io, $this->loadRequiredSessionStore($effectiveConfig->sessionFile())->load()->messages());
+
+            return Command::SUCCESS;
+        }
+
         $model = $effectiveConfig->model();
         $this->authResolver->resolve($effectiveConfig);
 
@@ -211,6 +240,22 @@ final class CodexRunCommand extends Command
         $table->render();
     }
 
+    private function writeSessionDiagnostics(SymfonyStyle $io, CodexTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): void
+    {
+        $table = new Table($io);
+        $table->setStyle('box');
+        $table->setHeaders([
+            '<fg=gray>Metric</>',
+            '<fg=gray>Session</>',
+        ]);
+
+        foreach ($this->sessionUsageRows($sessionUsage, $modelMetadata) as $row) {
+            $table->addRow($row);
+        }
+
+        $table->render();
+    }
+
     /**
      * @return list<array{string, string, string}>
      */
@@ -293,5 +338,270 @@ final class CodexRunCommand extends Command
     {
         return $requestUsage->toArray() === (new CodexTokenUsage())->toArray()
             && $sessionUsage->toArray() === (new CodexTokenUsage())->toArray();
+    }
+
+    private function resolveDebugMode(mixed $debugOption): ?string
+    {
+        if (!is_string($debugOption) || $debugOption === '') {
+            return null;
+        }
+
+        return match ($debugOption) {
+            'system_prompt' => 'system_prompt',
+            'statistics', 'stats' => 'statistics',
+            'history' => 'history',
+            default => throw new \InvalidArgumentException(sprintf(
+                'Invalid debug mode "%s". Supported values are "system_prompt", "statistics", "stats", and "history".',
+                $debugOption,
+            )),
+        };
+    }
+
+    /**
+     * @return list<array{string, string}>
+     */
+    private function sessionUsageRows(CodexTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): array
+    {
+        $rows = [];
+        $metrics = [
+            ['input', $sessionUsage->input()],
+            ['cached_input', $sessionUsage->cachedInput()],
+            ['output', $sessionUsage->output()],
+            ['reasoning', $sessionUsage->reasoning()],
+            ['total', $sessionUsage->total()],
+            ['image_generation_input', $sessionUsage->imageGenerationInput()],
+            ['image_generation_output', $sessionUsage->imageGenerationOutput()],
+            ['image_generation_total', $sessionUsage->imageGenerationTotal()],
+            ['tool_calls', $sessionUsage->toolCalls()],
+        ];
+
+        foreach ($metrics as [$label, $sessionValue]) {
+            if ($sessionValue === 0) {
+                continue;
+            }
+
+            if ($label === 'total') {
+                $rows[] = [
+                    '<fg=yellow;options=bold>total</>',
+                    sprintf('<fg=yellow;options=bold>%s</>', $this->contextUsageFormatter->format($sessionValue, $modelMetadata)),
+                ];
+
+                continue;
+            }
+
+            $rows[] = [$label, $this->formatNumber($sessionValue)];
+        }
+
+        $sessionDetails = $this->formatToolCallDetails($sessionUsage);
+        if ($sessionDetails !== '-') {
+            $rows[] = ['tool_call_details', $sessionDetails];
+        }
+
+        $sessionCost = $this->tokenCostCalculator->estimate($sessionUsage, $modelMetadata);
+        if ($sessionCost !== null && $sessionUsage->toArray() !== (new CodexTokenUsage())->toArray()) {
+            $rows[] = ['estimated_cost', $sessionCost->formatUsd()];
+        }
+
+        return $rows;
+    }
+
+    private function readSessionUsage(?string $sessionFile): CodexTokenUsage
+    {
+        if ($sessionFile === null || $sessionFile === '') {
+            return new CodexTokenUsage();
+        }
+
+        $store = new CodexSessionStore($sessionFile);
+        if (!$store->exists()) {
+            return new CodexTokenUsage();
+        }
+
+        return (new CodexTokenUsageExtractor())->fromSession($store->load());
+    }
+
+    /**
+     * @param list<array<string, mixed>> $messages
+     */
+    private function writeSessionHistory(SymfonyStyle $io, array $messages): void
+    {
+        $requestNumber = 0;
+
+        foreach ($messages as $index => $message) {
+            $role = $message['role'] ?? null;
+
+            if ($role === 'user') {
+                ++$requestNumber;
+                $io->section(sprintf('Request %d', $requestNumber));
+                $io->writeln('<fg=white>User prompt:</>');
+                $this->writeDiagnosticBlock($io, (string) ($message['content'] ?? ''));
+                $io->newLine();
+
+                continue;
+            }
+
+            if ($role === 'assistant') {
+                $this->writeHistoryAssistantMessage(
+                    $io,
+                    $message,
+                    $requestNumber,
+                    $this->isFinalAssistantMessage($messages, $index) ? null : $this->assistantStepNumber($messages, $index),
+                    $this->isFinalAssistantMessage($messages, $index),
+                );
+            }
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $message
+     */
+    private function writeHistoryAssistantMessage(SymfonyStyle $io, array $message, int $requestNumber, ?int $responseIndex, bool $isFinal): void
+    {
+        $label = $isFinal
+            ? 'Response'
+            : sprintf('Response %d', $responseIndex);
+
+        $io->writeln(sprintf('<fg=white>%s:</>', $label));
+
+        $toolCalls = $message['tool_calls'] ?? null;
+        if (is_array($toolCalls) && $toolCalls !== []) {
+            $io->writeln('<fg=gray>Tool calls:</>');
+
+            foreach (array_values(array_filter($toolCalls, 'is_array')) as $toolCall) {
+                $name = $toolCall['name'] ?? 'unknown';
+                $toolCallId = $toolCall['id'] ?? null;
+                $suffix = is_string($toolCallId) && $toolCallId !== '' ? sprintf(' [%s]', $toolCallId) : '';
+                $arguments = $toolCall['arguments'] ?? [];
+                $encodedArguments = json_encode($arguments, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+                $io->writeln(sprintf('<fg=gray>- %s%s %s</>', $name, $suffix, $encodedArguments));
+            }
+        }
+
+        $content = $this->extractAssistantContent($message);
+        if ($content !== '') {
+            $this->writeDiagnosticBlock($io, $content);
+        }
+
+        $io->newLine();
+    }
+
+    /**
+     * @param list<array<string, mixed>> $messages
+     */
+    private function isFinalAssistantMessage(array $messages, int $index): bool
+    {
+        for ($cursor = $index + 1, $count = count($messages); $cursor < $count; ++$cursor) {
+            $role = $messages[$cursor]['role'] ?? null;
+
+            if ($role === 'user') {
+                return true;
+            }
+
+            if ($role === 'assistant') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $messages
+     */
+    private function assistantStepNumber(array $messages, int $index): int
+    {
+        $step = 0;
+
+        for ($cursor = $index; $cursor >= 0; --$cursor) {
+            $role = $messages[$cursor]['role'] ?? null;
+
+            if ($role === 'user') {
+                break;
+            }
+
+            if ($role === 'assistant') {
+                ++$step;
+            }
+        }
+
+        return $step;
+    }
+
+    private function loadRequiredSessionStore(?string $sessionFile): CodexSessionStore
+    {
+        if ($sessionFile === null || $sessionFile === '') {
+            throw new \InvalidArgumentException('Debug mode "history" requires --session-file.');
+        }
+
+        $store = new CodexSessionStore($sessionFile);
+        if (!$store->exists()) {
+            throw new \InvalidArgumentException(sprintf(
+                'Debug mode "history" requires an existing session file. File not found: %s',
+                $sessionFile,
+            ));
+        }
+
+        return $store;
+    }
+
+    /**
+     * @param array<string, mixed> $message
+     */
+    private function extractAssistantContent(array $message): string
+    {
+        $content = $message['content'] ?? null;
+
+        if (is_string($content) && trim($content) !== '') {
+            return $content;
+        }
+
+        $finalResponse = $message['metadata']['final_response'] ?? null;
+
+        return $this->extractTextFromFinalResponse(is_array($finalResponse) ? $finalResponse : []);
+    }
+
+    /**
+     * @param array<string, mixed> $finalResponse
+     */
+    private function extractTextFromFinalResponse(array $finalResponse): string
+    {
+        $output = $finalResponse['output'] ?? null;
+
+        if (!is_array($output)) {
+            return '';
+        }
+
+        $parts = [];
+
+        foreach ($output as $item) {
+            if (!is_array($item) || ($item['type'] ?? null) !== 'message') {
+                continue;
+            }
+
+            $content = $item['content'] ?? null;
+
+            if (!is_array($content)) {
+                continue;
+            }
+
+            foreach ($content as $contentItem) {
+                if (!is_array($contentItem)) {
+                    continue;
+                }
+
+                $type = $contentItem['type'] ?? null;
+
+                if ($type === 'output_text' && is_string($contentItem['text'] ?? null)) {
+                    $parts[] = $contentItem['text'];
+                    continue;
+                }
+
+                if ($type === 'text' && is_string($contentItem['text'] ?? null)) {
+                    $parts[] = $contentItem['text'];
+                }
+            }
+        }
+
+        return implode("\n", array_filter($parts, static fn (string $part): bool => $part !== ''));
     }
 }

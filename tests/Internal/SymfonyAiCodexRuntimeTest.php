@@ -743,6 +743,56 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         ], $metadata['request_assistant_messages'][0]);
     }
 
+    public function testSessionPersistsFinalResponseOutputForHistoryDebugging(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        $holder = (object) ['inputs' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            sessionFile: $sessionFile,
+            metadata: [
+                'provider' => 'test',
+                'final_response' => [
+                    'usage' => ['total_tokens' => 12],
+                    'output' => [
+                        [
+                            'type' => 'message',
+                            'content' => [
+                                [
+                                    'type' => 'output_text',
+                                    'text' => 'Persisted final answer',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            results: [
+                new TextResult(''),
+            ],
+        );
+
+        $runtime->request('Persist output');
+        $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
+        $metadata = $payload['messages'][1]['metadata'];
+
+        self::assertSame([
+            'usage' => ['total_tokens' => 12],
+            'output' => [
+                [
+                    'type' => 'message',
+                    'content' => [
+                        [
+                            'type' => 'output_text',
+                            'text' => 'Persisted final answer',
+                        ],
+                    ],
+                ],
+            ],
+        ], $metadata['final_response']);
+    }
+
     public function testSessionDoesNotPersistToolOutputsOrBinaryAttachments(): void
     {
         $path = $this->tempDirectory . '/image.png';

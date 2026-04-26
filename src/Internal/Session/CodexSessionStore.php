@@ -218,17 +218,23 @@ final class CodexSessionStore
 
     /**
      * @param array<string, mixed> $finalResponse
-     * @return array{usage: array<string, mixed>}|array{}
+     * @return array<string, mixed>
      */
     private function sanitizeFinalResponse(array $finalResponse): array
     {
+        $sanitized = [];
         $usage = $finalResponse['usage'] ?? null;
 
-        if (!is_array($usage)) {
-            return [];
+        if (is_array($usage)) {
+            $sanitized['usage'] = $usage;
         }
 
-        return ['usage' => $usage];
+        $output = $finalResponse['output'] ?? null;
+        if (is_array($output)) {
+            $sanitized['output'] = $output;
+        }
+
+        return $sanitized;
     }
 
     /**
