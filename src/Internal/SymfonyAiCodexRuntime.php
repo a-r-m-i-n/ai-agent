@@ -66,8 +66,15 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         }
 
         $toolbox = new SymfonyAiToolbox($this->toolRegistry);
-        $imageGenerator = new ImageGenerator($this->config->workingDirectory(), $this->httpClient, $resolvedAuth);
-        $systemPrompt = ($this->systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry))->build();
+        $functionTools = $toolbox->getTools();
+        $requestOptions = $this->buildRequestOptions($resolvedModel->provider(), $resolvedAuth, $platform, $resolvedModel->model(), $responseClass);
+        $hostedTools = $this->resolveHostedTools($resolvedModel->provider());
+        $requestOptions = $this->mergeHostedToolsIntoRequestOptions($resolvedModel->provider(), $requestOptions, $functionTools, $hostedTools);
+        $systemPrompt = ($this->systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry))->build([
+            'provider' => $resolvedModel->provider(),
+            'model' => $resolvedModel->qualifiedName(),
+            'hosted_tools' => $hostedTools,
+        ]);
         $messageBag = $this->createMessageBagFromSession(
             $session,
             $systemPrompt,
@@ -83,13 +90,10 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         );
         $messageBag->add(Message::ofUser(...$messageContents));
         $modelSupportsImageInput = $platform->getModelCatalog()->getModel($resolvedModel->model())->supports(Capability::INPUT_IMAGE);
-        $requestOptions = $this->buildRequestOptions($resolvedModel->provider(), $resolvedAuth, $platform, $resolvedModel->model(), $responseClass);
-        $requestOptions['tools'] = $toolbox->getTools();
         $attachedImagesMetadata = array_map(
             static fn (LocalImageAttachment $attachment): array => $attachment->toMetadata(),
             $attachments,
         );
-        $generatedImagesMetadata = [];
         $requestAssistantMessages = [];
         $response = null;
 
@@ -136,7 +140,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             $nextStepImages = [];
 
             foreach ($assistantToolCalls as $toolCall) {
-                $toolResult = $this->executeToolCall($toolCall, $platform, $resolvedModel->provider(), $resolvedModel->model(), $imageGenerator);
+                $toolResult = $this->executeToolCall($toolCall);
                 $messageBag->add(Message::ofToolCall($toolCall, $toolResult['message']));
                 if ($sessionStore instanceof CodexSessionStore) {
                     $session->appendToolMessage($toolResult['message'], $toolCall->getId());
@@ -148,9 +152,6 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
                     $attachedImagesMetadata[] = $toolResult['attachment']->toMetadata();
                 }
 
-                if ($toolResult['generated_image'] instanceof GeneratedImage) {
-                    $generatedImagesMetadata[] = $toolResult['generated_image']->toMetadata();
-                }
             }
 
             if ($nextStepImages !== []) {
@@ -171,6 +172,9 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 
         $metadata = $response->metadata();
         $metadata['system_prompt'] = $systemPrompt;
+        $metadata['hosted_tools'] = $hostedTools;
+        $generatedImagesMetadata = (new HostedImageGenerationPersister($this->config->workingDirectory()))
+            ->persist($resolvedModel->provider(), $resolvedModel->model(), $prompt, $metadata, $attachedImagesMetadata);
 
         if ($attachedImagesMetadata !== []) {
             $metadata['attached_images'] = $attachedImagesMetadata;
@@ -178,6 +182,24 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 
         if ($generatedImagesMetadata !== []) {
             $metadata['generated_images'] = $generatedImagesMetadata;
+
+            if ($response->content() === '') {
+                $filenames = array_values(array_filter(array_map(
+                    static fn (array $image): ?string => is_string($image['filename'] ?? null) ? $image['filename'] : null,
+                    $generatedImagesMetadata,
+                )));
+
+                $content = \count($filenames) === 1
+                    ? sprintf('Generated image saved to %s.', $filenames[0])
+                    : sprintf('Generated %d images.', \count($generatedImagesMetadata));
+
+                $response = new CodexResponse(
+                    $content,
+                    $response->model(),
+                    $response->toolCalls(),
+                    $response->metadata(),
+                );
+            }
         }
 
         if ($requestAssistantMessages !== []) {
@@ -259,6 +281,103 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         return $options;
     }
 
+    /**
+     * @return array{
+     *     requested: list<string>,
+     *     enabled: list<string>,
+     *     skipped: list<array{tool: string, reason: string}>
+     * }
+     */
+    private function resolveHostedTools(string $provider): array
+    {
+        $requested = [];
+        $enabled = [];
+        $skipped = [];
+
+        if ($this->config->enableBuiltinWebSearch()) {
+            $requested[] = 'web_search';
+
+            if (in_array($provider, ['openai', 'anthropic', 'gemini'], true)) {
+                $enabled[] = 'web_search';
+            } else {
+                $skipped[] = ['tool' => 'web_search', 'reason' => 'unsupported_provider'];
+            }
+        }
+
+        if ($this->config->enableBuiltinImageGeneration()) {
+            $requested[] = 'image_generation';
+
+            if ($provider === 'openai') {
+                $enabled[] = 'image_generation';
+            } else {
+                $skipped[] = ['tool' => 'image_generation', 'reason' => 'unsupported_provider'];
+            }
+        }
+
+        return [
+            'requested' => $requested,
+            'enabled' => $enabled,
+            'skipped' => $skipped,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $requestOptions
+     * @param list<mixed> $functionTools
+     * @param array{requested: list<string>, enabled: list<string>, skipped: list<array{tool: string, reason: string}>} $hostedTools
+     *
+     * @return array<string, mixed>
+     */
+    private function mergeHostedToolsIntoRequestOptions(string $provider, array $requestOptions, array $functionTools, array $hostedTools): array
+    {
+        $enabled = $hostedTools['enabled'];
+
+        if ($provider === 'openai') {
+            $tools = [
+                ...$functionTools,
+                ...array_values(array_filter([
+                    in_array('web_search', $enabled, true) ? ['type' => 'web_search'] : null,
+                    in_array('image_generation', $enabled, true) ? ['type' => 'image_generation'] : null,
+                ])),
+            ];
+
+            if ($tools !== []) {
+                $requestOptions['tools'] = $tools;
+            }
+
+            return $requestOptions;
+        }
+
+        if ($provider === 'anthropic') {
+            $tools = [
+                ...$functionTools,
+                ...array_values(array_filter([
+                    in_array('web_search', $enabled, true)
+                        ? ['type' => 'web_search_20250305', 'name' => 'web_search', 'max_uses' => 5]
+                        : null,
+                ])),
+            ];
+
+            if ($tools !== []) {
+                $requestOptions['tools'] = $tools;
+            }
+
+            return $requestOptions;
+        }
+
+        if ($provider === 'gemini') {
+            if ($functionTools !== []) {
+                $requestOptions['tools'] = $functionTools;
+            }
+
+            if (in_array('web_search', $enabled, true)) {
+                $requestOptions['server_tools']['google_search'] = true;
+            }
+        }
+
+        return $requestOptions;
+    }
+
     private function createSessionStore(): ?CodexSessionStore
     {
         $sessionFile = $this->config->sessionFile();
@@ -327,33 +446,17 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
     }
 
     /**
-     * @return array{message: string, attachment: ?LocalImageAttachment, generated_image: ?GeneratedImage}
+     * @return array{message: string, attachment: ?LocalImageAttachment}
      */
-    private function executeToolCall(
-        ToolCall $toolCall,
-        PlatformInterface $platform,
-        string $provider,
-        string $model,
-        ImageGenerator $imageGenerator,
-    ): array
+    private function executeToolCall(ToolCall $toolCall): array
     {
         try {
             $attachment = null;
-            $generatedImage = null;
-
-            if ($toolCall->getName() === 'generate_image') {
-                $generatedImage = $imageGenerator->generate($platform, $provider, $model, $toolCall->getArguments());
-                $payload = [
-                    'success' => true,
-                    'payload' => $generatedImage->toMetadata(),
-                ];
-            } else {
-                $result = $this->toolRegistry->get($toolCall->getName())->execute($toolCall->getArguments());
-                $payload = [
-                    'success' => $result->isSuccess(),
-                    'payload' => $result->payload(),
-                ];
-            }
+            $result = $this->toolRegistry->get($toolCall->getName())->execute($toolCall->getArguments());
+            $payload = [
+                'success' => $result->isSuccess(),
+                'payload' => $result->payload(),
+            ];
 
             if (
                 $toolCall->getName() === 'view_image'
@@ -366,10 +469,6 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
                     ->resolve($result->payload()['path']);
             }
         } catch (\Throwable $e) {
-            if ($toolCall->getName() === 'generate_image') {
-                throw $e;
-            }
-
             $payload = [
                 'success' => false,
                 'payload' => [
@@ -377,7 +476,6 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
                 ],
             ];
             $attachment = null;
-            $generatedImage = null;
         }
 
         try {
@@ -390,7 +488,6 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         return [
             'message' => $message,
             'attachment' => $attachment,
-            'generated_image' => $generatedImage,
         ];
     }
 }

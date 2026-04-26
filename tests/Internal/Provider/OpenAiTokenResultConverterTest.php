@@ -100,6 +100,27 @@ TEXT;
         self::assertSame(['path' => 'composer.json'], $toolCallDeltas[0]->getToolCalls()[0]->getArguments());
     }
 
+    public function testConvertedStreamResultPreservesImageGenerationEventsInMetadata(): void
+    {
+        $converter = new OpenAiTokenResultConverter();
+        $body = <<<TEXT
+event: response.image_generation_call.partial_image
+data: {"type":"response.image_generation_call.partial_image","partial_image_b64":"aGVsbG8=","output_format":"png"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_123","output":[],"usage":{"input_tokens":4,"output_tokens":1,"total_tokens":5}}}
+
+TEXT;
+        $httpClient = new MockHttpClient([
+            new MockResponse($body, ['http_code' => 200]),
+        ]);
+        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiCodexStream());
+
+        $result = $converter->convert($rawResult, ['stream' => true]);
+
+        self::assertSame('response.image_generation_call.partial_image', $result->getMetadata()->all()['stream_events'][0]['type']);
+    }
+
     public function testBadRequestIncludesErrorDetailsFromResponseBody(): void
     {
         $converter = new OpenAiTokenResultConverter();

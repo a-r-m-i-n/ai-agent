@@ -8,6 +8,7 @@ use Armin\CodexPhp\Tool\Builtin\ApplyPatchTool;
 use Armin\CodexPhp\Tool\Builtin\ReadFileTool;
 use Armin\CodexPhp\Tool\Builtin\SearchTool;
 use Armin\CodexPhp\Tool\Builtin\ShellTool;
+use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
 use Armin\CodexPhp\Exception\ToolNotFound;
 
 final class ToolRegistry
@@ -62,5 +63,6 @@ final class ToolRegistry
         $this->register(new ReadFileTool($workingDirectory));
         $this->register(new SearchTool($workingDirectory));
         $this->register(new ShellTool($workingDirectory));
+        $this->register(new ViewImageTool($workingDirectory));
     }
 }

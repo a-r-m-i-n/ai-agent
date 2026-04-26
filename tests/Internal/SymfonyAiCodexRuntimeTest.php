@@ -8,9 +8,7 @@ use Armin\CodexPhp\Auth\CodexAuth;
 use Armin\CodexPhp\CodexConfig;
 use Armin\CodexPhp\Exception\InvalidSession;
 use Armin\CodexPhp\Exception\ModelDoesNotSupportImageInput;
-use Armin\CodexPhp\Exception\ModelDoesNotSupportImageOutput;
 use Armin\CodexPhp\Internal\SymfonyAiCodexRuntime;
-use Armin\CodexPhp\Tool\Builtin\GenerateImageTool;
 use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
 use Armin\CodexPhp\Tool\ToolInterface;
 use Armin\CodexPhp\Tool\ToolRegistry;
@@ -27,7 +25,6 @@ use Symfony\AI\Platform\Result\DeferredResult;
 use Symfony\AI\Platform\Result\MultiPartResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
-use Symfony\AI\Platform\Result\BinaryResult;
 use Symfony\AI\Platform\Result\TextResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Result\ToolCallResult;
@@ -95,6 +92,138 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         self::assertSame('RuntimeStructuredResponse', $holder->options[0]['response_format']['json_schema']['name']);
         self::assertTrue($holder->options[0]['response_format']['json_schema']['strict']);
         self::assertArrayHasKey('message', $holder->options[0]['response_format']['json_schema']['schema']['properties']);
+    }
+
+    public function testOpenAiRequestIncludesFunctionToolsAndHostedToolsByDefault(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $registry = new ToolRegistry();
+        $registry->register($this->createTool('custom_tool', fn (array $input): ToolResult => ToolResult::success($input)));
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            toolRegistry: $registry,
+        );
+
+        $response = $runtime->request('Inspect this.');
+
+        self::assertCount(3, $holder->options[0]['tools']);
+        self::assertSame('custom_tool', $holder->options[0]['tools'][0]->getName());
+        self::assertSame(['type' => 'web_search'], $holder->options[0]['tools'][1]);
+        self::assertSame(['type' => 'image_generation'], $holder->options[0]['tools'][2]);
+        self::assertSame(['requested' => ['web_search', 'image_generation'], 'enabled' => ['web_search', 'image_generation'], 'skipped' => []], $response->metadata()['hosted_tools']);
+        self::assertStringContainsString('Use hosted web search', $response->metadata()['system_prompt']);
+        self::assertStringContainsString('Use hosted image generation', $response->metadata()['system_prompt']);
+    }
+
+    public function testOpenAiRequestOmitsHostedToolsWhenDisabled(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            configOverrides: [
+                'enableBuiltinWebSearch' => false,
+                'enableBuiltinImageGeneration' => false,
+            ],
+        );
+
+        $response = $runtime->request('Inspect this.');
+
+        self::assertArrayNotHasKey('tools', $holder->options[0]);
+        self::assertSame(['requested' => [], 'enabled' => [], 'skipped' => []], $response->metadata()['hosted_tools']);
+        self::assertStringNotContainsString('Hosted provider tools:', $response->metadata()['system_prompt']);
+    }
+
+    public function testAnthropicRequestIncludesHostedWebSearchOnlyAndPreservesFunctionTools(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $registry = new ToolRegistry();
+        $registry->register($this->createTool('custom_tool', fn (array $input): ToolResult => ToolResult::success($input)));
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            toolRegistry: $registry,
+            model: 'anthropic:claude-sonnet-4-5',
+        );
+
+        $response = $runtime->request('Inspect this.');
+
+        self::assertCount(2, $holder->options[0]['tools']);
+        self::assertSame('custom_tool', $holder->options[0]['tools'][0]->getName());
+        self::assertSame(['type' => 'web_search_20250305', 'name' => 'web_search', 'max_uses' => 5], $holder->options[0]['tools'][1]);
+        self::assertSame([
+            'requested' => ['web_search', 'image_generation'],
+            'enabled' => ['web_search'],
+            'skipped' => [['tool' => 'image_generation', 'reason' => 'unsupported_provider']],
+        ], $response->metadata()['hosted_tools']);
+        self::assertStringContainsString('Use hosted web search', $response->metadata()['system_prompt']);
+        self::assertStringNotContainsString('Use hosted image generation', $response->metadata()['system_prompt']);
+    }
+
+    public function testGeminiRequestUsesServerToolForWebSearchAndKeepsFunctionToolsSeparate(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $registry = new ToolRegistry();
+        $registry->register($this->createTool('custom_tool', fn (array $input): ToolResult => ToolResult::success($input)));
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            toolRegistry: $registry,
+            model: 'gemini:gemini-2.5-pro',
+        );
+
+        $response = $runtime->request('Inspect this.');
+
+        self::assertCount(1, $holder->options[0]['tools']);
+        self::assertSame('custom_tool', $holder->options[0]['tools'][0]->getName());
+        self::assertTrue($holder->options[0]['server_tools']['google_search']);
+        self::assertSame([
+            'requested' => ['web_search', 'image_generation'],
+            'enabled' => ['web_search'],
+            'skipped' => [['tool' => 'image_generation', 'reason' => 'unsupported_provider']],
+        ], $response->metadata()['hosted_tools']);
+        self::assertStringContainsString('Use hosted web search', $response->metadata()['system_prompt']);
+        self::assertStringNotContainsString('Use hosted image generation', $response->metadata()['system_prompt']);
+    }
+
+    public function testOpenAiHostedImageGenerationIsPersistedAndProducesFallbackContent(): void
+    {
+        $path = $this->tempDirectory . '/image.jpg';
+        file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
+
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            results: [
+                new TextResult(''),
+            ],
+            metadata: [
+                'provider' => 'test',
+                'final_response' => [
+                    'tool_usage' => [
+                        'image_gen' => [
+                            'input_tokens' => 10,
+                            'output_tokens' => 20,
+                            'total_tokens' => 30,
+                        ],
+                    ],
+                ],
+                'stream_events' => [[
+                    'type' => 'response.image_generation_call.partial_image',
+                    'partial_image_b64' => base64_encode('generated-binary'),
+                    'output_format' => 'jpeg',
+                ]],
+            ],
+        );
+
+        $response = $runtime->request("Erstelle ein neues Bild 'cat.jpg' im selben Ordner und nutze image.jpg als Vorlage.");
+
+        self::assertSame('Generated image saved to cat.jpg.', $response->content());
+        self::assertCount(1, $response->generatedImages());
+        self::assertSame($this->tempDirectory . '/cat.jpg', $response->generatedImages()[0]['path']);
+        self::assertSame('generated-binary', file_get_contents($this->tempDirectory . '/cat.jpg'));
     }
 
     public function testStructuredRequestStillReturnsJsonTextInCodexResponse(): void
@@ -600,114 +729,12 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         self::assertStringContainsString('broken image', $holder->inputs[1]->getMessages()[3]->getContent());
     }
 
-    public function testGenerateImageToolCallStoresImageAndReturnsMetadata(): void
-    {
-        $holder = (object) ['inputs' => []];
-        $runtime = $this->createRuntime(
-            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_IMAGE],
-            $holder,
-            results: [
-                new ToolCallResult([new ToolCall('call-1', 'generate_image', [
-                    'prompt' => 'Draw a castle',
-                    'filename' => 'castle',
-                ])]),
-                new BinaryResult('castle-binary', 'image/webp'),
-                new TextResult('Saved to castle.webp'),
-            ],
-            toolRegistry: $this->createRegistryWithOptionalImageTools($this->tempDirectory, withGenerateImage: true),
-        );
-
-        $response = $runtime->request('Bitte erstelle ein Bild.');
-
-        self::assertSame('Saved to castle.webp', $response->content());
-        self::assertCount(1, $response->generatedImages());
-        self::assertSame($this->tempDirectory . '/castle.webp', $response->generatedImages()[0]['path']);
-        self::assertSame('castle.webp', $response->generatedImages()[0]['filename']);
-        self::assertSame('image/webp', $response->generatedImages()[0]['mime_type']);
-        self::assertSame('castle-binary', file_get_contents($this->tempDirectory . '/castle.webp'));
-        self::assertCount(3, $holder->inputs);
-        self::assertSame('Draw a castle', $holder->inputs[1]);
-    }
-
-    public function testGenerateImageUsesCurrentWorkingDirectoryWhenNoConfiguredWorkingDirectoryExists(): void
-    {
-        $workingDirectory = $this->tempDirectory . '/cwd';
-        mkdir($workingDirectory, 0777, true);
-        $holder = (object) ['inputs' => []];
-        $runtime = $this->createRuntime(
-            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_IMAGE],
-            $holder,
-            null,
-            results: [
-                new ToolCallResult([new ToolCall('call-1', 'generate_image', ['prompt' => 'Draw a river'])]),
-                new BinaryResult('river', 'image/png'),
-                new TextResult('done'),
-            ],
-            toolRegistry: $this->createRegistryWithOptionalImageTools(null, withGenerateImage: true),
-        );
-
-        $previousWorkingDirectory = getcwd();
-        chdir($workingDirectory);
-
-        try {
-            $response = $runtime->request('Erzeuge ein Bild.');
-        } finally {
-            if (is_string($previousWorkingDirectory) && $previousWorkingDirectory !== '') {
-                chdir($previousWorkingDirectory);
-            }
-        }
-
-        self::assertMatchesRegularExpression('#^' . preg_quote($workingDirectory, '#') . '/new_image_[a-f0-9]{12}\.png$#', $response->generatedImages()[0]['path']);
-        self::assertFileExists($response->generatedImages()[0]['path']);
-    }
-
-    public function testGenerateImageWithoutModelCapabilityThrowsClearException(): void
-    {
-        $holder = (object) ['inputs' => []];
-        $runtime = $this->createRuntime(
-            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
-            $holder,
-            results: [
-                new ToolCallResult([new ToolCall('call-1', 'generate_image', ['prompt' => 'Draw a cat'])]),
-            ],
-            toolRegistry: $this->createRegistryWithOptionalImageTools($this->tempDirectory, withGenerateImage: true),
-        );
-
-        $this->expectException(ModelDoesNotSupportImageOutput::class);
-
-        $runtime->request('Erzeuge ein Bild.');
-    }
-
-    public function testSessionStoresGeneratedImageMetadataWithoutBinaryData(): void
-    {
-        $sessionFile = $this->tempDirectory . '/session.json';
-        $holder = (object) ['inputs' => []];
-        $runtime = $this->createRuntime(
-            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_IMAGE],
-            $holder,
-            sessionFile: $sessionFile,
-            results: [
-                new ToolCallResult([new ToolCall('call-1', 'generate_image', ['prompt' => 'Draw a tree'])]),
-                new BinaryResult('tree-binary', 'image/png'),
-                new TextResult('done'),
-            ],
-            toolRegistry: $this->createRegistryWithOptionalImageTools($this->tempDirectory, withGenerateImage: true),
-        );
-
-        $response = $runtime->request('Erzeuge ein Bild.');
-        $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
-
-        self::assertCount(4, $payload['messages']);
-        self::assertArrayNotHasKey('generated_images', $payload['messages'][3]['metadata'] ?? []);
-        self::assertStringNotContainsString('tree-binary', json_encode($payload, JSON_THROW_ON_ERROR));
-    }
-
     public function testSessionPersistsOnlyTokenRelevantAssistantMetadata(): void
     {
         $sessionFile = $this->tempDirectory . '/session.json';
         $holder = (object) ['inputs' => []];
         $runtime = $this->createRuntime(
-            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_IMAGE],
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
             sessionFile: $sessionFile,
             metadata: [
@@ -720,11 +747,10 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
                 'stream_events' => [['type' => 'response.completed']],
             ],
             results: [
-                new ToolCallResult([new ToolCall('call-1', 'generate_image', ['prompt' => 'Draw a tree'])]),
-                new BinaryResult('tree-binary', 'image/png'),
+                new ToolCallResult([new ToolCall('call-1', 'search', ['path' => '.'])]),
                 new TextResult('done'),
             ],
-            toolRegistry: $this->createRegistryWithOptionalImageTools($this->tempDirectory, withGenerateImage: true),
+            toolRegistry: ToolRegistry::withBuiltins($this->tempDirectory),
         );
 
         $runtime->request('Erzeuge ein Bild.');
@@ -938,6 +964,8 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         array $metadata = ['provider' => 'test'],
         array $results = [],
         ?ToolRegistry $toolRegistry = null,
+        string $model = 'openai:gpt-5.4-mini',
+        array $configOverrides = [],
     ): SymfonyAiCodexRuntime {
         $platform = new class($capabilities, $holder, $metadata, $results) implements PlatformInterface {
             /**
@@ -1032,10 +1060,12 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
 
         return new SymfonyAiCodexRuntime(
             new CodexConfig(
-                model: 'openai:gpt-5.4-mini',
+                model: $model,
                 auth: new CodexAuth(authMode: CodexAuth::MODE_API_KEY, apiKey: 'test-key'),
                 sessionFile: $sessionFile,
                 workingDirectory: $workingDirectory === false ? $this->tempDirectory : $workingDirectory,
+                enableBuiltinWebSearch: $configOverrides['enableBuiltinWebSearch'] ?? true,
+                enableBuiltinImageGeneration: $configOverrides['enableBuiltinImageGeneration'] ?? true,
             ),
             $toolRegistry ?? new ToolRegistry(),
             platform: $platform,
@@ -1045,16 +1075,11 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
     private function createRegistryWithOptionalImageTools(
         ?string $workingDirectory,
         bool $withViewImage = false,
-        bool $withGenerateImage = false,
     ): ToolRegistry {
         $registry = ToolRegistry::withBuiltins($workingDirectory);
 
         if ($withViewImage) {
             $registry->register(new ViewImageTool($workingDirectory));
-        }
-
-        if ($withGenerateImage) {
-            $registry->register(new GenerateImageTool($workingDirectory));
         }
 
         return $registry;

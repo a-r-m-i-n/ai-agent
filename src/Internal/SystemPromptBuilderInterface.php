@@ -6,5 +6,8 @@ namespace Armin\CodexPhp\Internal;
 
 interface SystemPromptBuilderInterface
 {
-    public function build(): string;
+    /**
+     * @param array<string, mixed> $context
+     */
+    public function build(array $context = []): string;
 }

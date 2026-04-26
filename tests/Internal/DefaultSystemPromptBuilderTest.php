@@ -176,6 +176,34 @@ final class DefaultSystemPromptBuilderTest extends TestCase
         self::assertSame('Only this prompt.', $builder->build());
     }
 
+    public function testBuildIncludesOnlyEffectiveHostedProviderToolsFromContext(): void
+    {
+        $builder = new DefaultSystemPromptBuilder(new CodexConfig(), new ToolRegistry());
+
+        $prompt = $builder->build([
+            'hosted_tools' => [
+                'enabled' => ['web_search'],
+            ],
+        ]);
+
+        self::assertStringContainsString('Hosted provider tools:', $prompt);
+        self::assertStringContainsString('Use hosted web search for current information, source-backed answers, and live web lookups.', $prompt);
+        self::assertStringNotContainsString('Use hosted image generation when the user asks to create or edit images.', $prompt);
+    }
+
+    public function testBuildOmitsHostedProviderSectionWhenNothingIsEnabled(): void
+    {
+        $builder = new DefaultSystemPromptBuilder(new CodexConfig(), new ToolRegistry());
+
+        $prompt = $builder->build([
+            'hosted_tools' => [
+                'enabled' => [],
+            ],
+        ]);
+
+        self::assertStringNotContainsString('Hosted provider tools:', $prompt);
+    }
+
     /**
      * @param list<string> $command
      */

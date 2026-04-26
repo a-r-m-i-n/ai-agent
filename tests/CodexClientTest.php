@@ -54,7 +54,7 @@ final class CodexClientTest extends TestCase
         self::assertFalse($client->hasTool('edit_file'));
         self::assertFalse($client->hasTool('write_files'));
         self::assertFalse($client->hasTool('run_command'));
-        self::assertFalse($client->hasTool('view_image'));
+        self::assertTrue($client->hasTool('view_image'));
         self::assertFalse($client->hasTool('find_files'));
         self::assertFalse($client->hasTool('generate_image'));
     }
@@ -105,6 +105,31 @@ final class CodexClientTest extends TestCase
         self::assertSame($this->tempDirectory, $config->workingDirectory());
         self::assertSame('Answer tersely.', $config->systemPrompt());
         self::assertSame('replace', $config->systemPromptMode());
+    }
+
+    public function testBuiltinHostedToolFlagsDefaultToEnabled(): void
+    {
+        $config = new CodexConfig();
+
+        self::assertTrue($config->enableBuiltinWebSearch());
+        self::assertTrue($config->enableBuiltinImageGeneration());
+    }
+
+    public function testBuiltinHostedToolFlagsSupportConstructorAndSetterOverrides(): void
+    {
+        $config = new CodexConfig(
+            enableBuiltinWebSearch: false,
+            enableBuiltinImageGeneration: false,
+        );
+
+        self::assertFalse($config->enableBuiltinWebSearch());
+        self::assertFalse($config->enableBuiltinImageGeneration());
+
+        $config->setEnableBuiltinWebSearch(true);
+        $config->setEnableBuiltinImageGeneration(true);
+
+        self::assertTrue($config->enableBuiltinWebSearch());
+        self::assertTrue($config->enableBuiltinImageGeneration());
     }
 
     public function testInvalidSystemPromptModeThrows(): void

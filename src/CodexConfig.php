@@ -19,6 +19,8 @@ final class CodexConfig
         private readonly ?string $workingDirectory = null,
         private readonly ?string $systemPrompt = null,
         private readonly string $systemPromptMode = 'append',
+        private bool $enableBuiltinWebSearch = true,
+        private bool $enableBuiltinImageGeneration = true,
     ) {
         if (!in_array($this->systemPromptMode, ['append', 'replace'], true)) {
             throw new \InvalidArgumentException(sprintf('Invalid system prompt mode "%s". Supported values are "append" and "replace".', $this->systemPromptMode));
@@ -132,5 +134,29 @@ final class CodexConfig
     public function systemPromptMode(): string
     {
         return $this->systemPromptMode;
+    }
+
+    public function enableBuiltinWebSearch(): bool
+    {
+        return $this->enableBuiltinWebSearch;
+    }
+
+    public function enableBuiltinImageGeneration(): bool
+    {
+        return $this->enableBuiltinImageGeneration;
+    }
+
+    public function setEnableBuiltinWebSearch(bool $enableBuiltinWebSearch): self
+    {
+        $this->enableBuiltinWebSearch = $enableBuiltinWebSearch;
+
+        return $this;
+    }
+
+    public function setEnableBuiltinImageGeneration(bool $enableBuiltinImageGeneration): self
+    {
+        $this->enableBuiltinImageGeneration = $enableBuiltinImageGeneration;
+
+        return $this;
     }
 }

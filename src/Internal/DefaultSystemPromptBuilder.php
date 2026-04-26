@@ -17,7 +17,7 @@ final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
     ) {
     }
 
-    public function build(): string
+    public function build(array $context = []): string
     {
         $customPrompt = $this->config->systemPrompt();
 
@@ -28,6 +28,7 @@ final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
         $sections = array_filter([
             CodexSystemPrompt::base(),
             $this->buildToolsSection(),
+            $this->buildHostedToolsSection($context),
             $this->buildRepositoryContextSection(),
             $this->buildAgentsSection(),
             $customPrompt,
@@ -53,6 +54,30 @@ final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
         $lines[] = '- Prefer read_file for targeted inspection, search for discovery, apply_patch for edits, and shell for local command execution.';
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function buildHostedToolsSection(array $context): ?string
+    {
+        $hostedTools = $context['hosted_tools']['enabled'] ?? null;
+
+        if (!is_array($hostedTools) || $hostedTools === []) {
+            return null;
+        }
+
+        $lines = ['Hosted provider tools:'];
+
+        if (in_array('web_search', $hostedTools, true)) {
+            $lines[] = '- Use hosted web search for current information, source-backed answers, and live web lookups.';
+        }
+
+        if (in_array('image_generation', $hostedTools, true)) {
+            $lines[] = '- Use hosted image generation when the user asks to create or edit images.';
+        }
+
+        return \count($lines) > 1 ? implode("\n", $lines) : null;
     }
 
     private function buildRepositoryContextSection(): ?string
