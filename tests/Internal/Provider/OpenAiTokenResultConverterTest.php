@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal\Provider;
+namespace Armin\AiAgent\Tests\Internal\Provider;
 
-use Armin\CodexPhp\Internal\Provider\OpenAiCodexStream;
-use Armin\CodexPhp\Internal\Provider\OpenAiTokenResultConverter;
+use Armin\AiAgent\Internal\Provider\OpenAiResponsesStream;
+use Armin\AiAgent\Internal\Provider\OpenAiTokenResultConverter;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Result\RawHttpResult;
@@ -33,7 +33,7 @@ TEXT;
         $httpClient = new MockHttpClient([
             new MockResponse($body, ['http_code' => 200]),
         ]);
-        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiCodexStream());
+        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiResponsesStream());
 
         $result = $converter->convert($rawResult, ['stream' => true]);
 
@@ -81,7 +81,7 @@ TEXT;
         $httpClient = new MockHttpClient([
             new MockResponse($body, ['http_code' => 200]),
         ]);
-        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiCodexStream());
+        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiResponsesStream());
 
         $result = $converter->convert($rawResult, ['stream' => true]);
 
@@ -114,7 +114,7 @@ TEXT;
         $httpClient = new MockHttpClient([
             new MockResponse($body, ['http_code' => 200]),
         ]);
-        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiCodexStream());
+        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiResponsesStream());
 
         $result = $converter->convert($rawResult, ['stream' => true]);
 

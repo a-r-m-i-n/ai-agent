@@ -2,20 +2,20 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal;
+namespace Armin\AiAgent\Tests\Internal;
 
-use Armin\CodexPhp\Internal\CodexResponseMapper;
+use Armin\AiAgent\Internal\AiAgentResponseMapper;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\ToolCall;
 
-final class CodexResponseMapperStreamTest extends TestCase
+final class AiAgentResponseMapperStreamTest extends TestCase
 {
     public function testMapConsumesStreamResultIntoFinalContent(): void
     {
-        $mapper = new CodexResponseMapper();
+        $mapper = new AiAgentResponseMapper();
         $result = new StreamResult((function (): \Generator {
             yield new TextDelta('Hel');
             yield new TextDelta('lo');
@@ -29,7 +29,7 @@ final class CodexResponseMapperStreamTest extends TestCase
 
     public function testMapConsumesStreamToolCalls(): void
     {
-        $mapper = new CodexResponseMapper();
+        $mapper = new AiAgentResponseMapper();
         $result = new StreamResult((function (): \Generator {
             yield new TextDelta('Need ');
             yield new ToolCallComplete([

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal\Provider;
+namespace Armin\AiAgent\Internal\Provider;
 
 use Symfony\AI\Platform\Bridge\OpenResponses\ResponsesModel;
 use Symfony\AI\Platform\Exception\InvalidArgumentException;
@@ -56,7 +56,7 @@ final class OpenAiTokenModelClient implements ModelClientInterface
                 ],
                 'json' => array_merge($options, ['model' => $model->getName(), 'store' => false, 'stream' => true], $payload),
             ]),
-            new OpenAiCodexStream(),
+            new OpenAiResponsesStream(),
         );
     }
 }

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal;
+namespace Armin\AiAgent\Tests\Internal;
 
-use Armin\CodexPhp\Internal\SymfonyAiToolbox;
-use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
-use Armin\CodexPhp\Tool\ToolDescriptionInterface;
-use Armin\CodexPhp\Tool\ToolInterface;
-use Armin\CodexPhp\Tool\ToolRegistry;
-use Armin\CodexPhp\Tool\ToolResult;
+use Armin\AiAgent\Internal\SymfonyAiToolbox;
+use Armin\AiAgent\Tool\SchemaAwareToolInterface;
+use Armin\AiAgent\Tool\ToolDescriptionInterface;
+use Armin\AiAgent\Tool\ToolInterface;
+use Armin\AiAgent\Tool\ToolRegistry;
+use Armin\AiAgent\Tool\ToolResult;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Result\ToolCall;
 

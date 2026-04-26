@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal;
+namespace Armin\AiAgent\Tests\Internal;
 
-use Armin\CodexPhp\Internal\ModelMetadataRegistry;
+use Armin\AiAgent\Internal\ModelMetadataRegistry;
 use PHPUnit\Framework\TestCase;
 
 final class ModelMetadataRegistryTest extends TestCase

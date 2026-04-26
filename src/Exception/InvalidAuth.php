@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Exception;
+namespace Armin\AiAgent\Exception;
 
 use InvalidArgumentException;
 

@@ -5,10 +5,10 @@
 ```php
 <?php
 
-use Armin\CodexPhp\CodexClient;
-use Armin\CodexPhp\CodexConfig;
+use Armin\AiAgent\AiAgentClient;
+use Armin\AiAgent\AiAgentConfig;
 
-$client = new CodexClient(new CodexConfig());
+$client = new AiAgentClient(new AiAgentConfig());
 
 $response = $client->request('Summarize this package and mention the built-in tools.');
 
@@ -17,19 +17,19 @@ echo $response->content();
 
 ## Configuration
 
-The package reads the API key from `CODEX_API_KEY` by default. Models must be configured as `provider:model`, for example `openai:gpt-5`.
+The package reads the API key from `AI_AGENT_API_KEY` by default. Models must be configured as `provider:model`, for example `openai:gpt-5`.
 
 You can also provide auth data as a PHP object or load it from an `auth.json` file:
 
 ```php
 <?php
 
-use Armin\CodexPhp\Auth\CodexAuth;
-use Armin\CodexPhp\CodexClient;
-use Armin\CodexPhp\CodexConfig;
+use Armin\AiAgent\Auth\AgentAuth;
+use Armin\AiAgent\AiAgentClient;
+use Armin\AiAgent\AiAgentConfig;
 
-$client = new CodexClient(new CodexConfig(
-    auth: CodexAuth::fromFile(__DIR__ . '/auth.json'),
+$client = new AiAgentClient(new AiAgentConfig(
+    auth: AgentAuth::fromFile(__DIR__ . '/auth.json'),
 ));
 ```
 
@@ -38,32 +38,32 @@ You can configure the runtime context directly in PHP:
 ```php
 <?php
 
-use Armin\CodexPhp\CodexClient;
-use Armin\CodexPhp\CodexConfig;
+use Armin\AiAgent\AiAgentClient;
+use Armin\AiAgent\AiAgentConfig;
 
-$client = new CodexClient(new CodexConfig(
-    sessionFile: __DIR__ . '/var/codex-session.json',
+$client = new AiAgentClient(new AiAgentConfig(
+    sessionFile: __DIR__ . '/var/ai-agent-session.json',
     workingDirectory: __DIR__,
     systemPrompt: 'Prefer short explanations and always mention potential risks.',
     systemPromptMode: 'append', // or "replace"
 ));
 ```
 
-You can override model and API key directly on the `CodexConfig` object from PHP:
+You can override model and API key directly on the `AiAgentConfig` object from PHP:
 
 ```php
 <?php
 
-use Armin\CodexPhp\CodexClient;
-use Armin\CodexPhp\CodexConfig;
+use Armin\AiAgent\AiAgentClient;
+use Armin\AiAgent\AiAgentConfig;
 
-$config = new CodexConfig();
+$config = new AiAgentConfig();
 $config
     ->setModel('openai:gpt-5.4-mini')
     ->setApiKey('your-key')
-    ->setSessionFile(__DIR__ . '/var/codex-session.json');
+    ->setSessionFile(__DIR__ . '/var/ai-agent-session.json');
 
-$client = new CodexClient($config);
+$client = new AiAgentClient($config);
 ```
 
 When `workingDirectory` is set, the built-in file tools resolve relative paths against it, `run_command` uses it as the default `cwd`, and `AGENTS.md` from that directory is automatically appended to the generated system prompt when present.
@@ -159,8 +159,8 @@ To continue a multi-turn exchange, reuse the same session file:
 ```php
 <?php
 
-$client = new CodexClient(new CodexConfig(
-    sessionFile: __DIR__ . '/var/codex-session.json',
+$client = new AiAgentClient(new AiAgentConfig(
+    sessionFile: __DIR__ . '/var/ai-agent-session.json',
 ));
 
 $client->request('Summarize this package.');
@@ -175,13 +175,13 @@ Existing session history is loaded before each request, and the current user pro
 
 Invalid or incompatible session files fail fast with a clear exception instead of silently starting with an empty history.
 
-You can inspect token usage for the last successful request directly on the client. The returned `Armin\CodexPhp\CodexTokenUsage` object keeps normal response usage and image-generation usage separate:
+You can inspect token usage for the last successful request directly on the client. The returned `Armin\AiAgent\AiAgentTokenUsage` object keeps normal response usage and image-generation usage separate:
 
 ```php
 <?php
 
-$client = new CodexClient(new CodexConfig(
-    sessionFile: __DIR__ . '/var/codex-session.json',
+$client = new AiAgentClient(new AiAgentConfig(
+    sessionFile: __DIR__ . '/var/ai-agent-session.json',
 ));
 
 $response = $client->request('Summarize this package.');
@@ -192,13 +192,13 @@ print_r($requestTokens->toArray());
 print_r($sessionTokens->toArray());
 ```
 
-`getRequestTokens()` reports the aggregated usage of the last successful `request()` call on the current `CodexClient` instance, including intermediate model steps caused by tool calls.
+`getRequestTokens()` reports the aggregated usage of the last successful `request()` call on the current `AiAgentClient` instance, including intermediate model steps caused by tool calls.
 
 `getSessionTokens()` loads the configured session file and aggregates all archived assistant responses from that file.
 
 If no request has been executed yet, or no session file is configured or present, both methods return an empty usage object with all counters set to `0`.
 
-The `CodexTokenUsage` payload contains these stable keys:
+The `AiAgentTokenUsage` payload contains these stable keys:
 
 - `input`
 - `cached_input`
@@ -214,8 +214,8 @@ The `CodexTokenUsage` payload contains these stable keys:
 ```php
 <?php
 
-use Armin\CodexPhp\Tool\ToolInterface;
-use Armin\CodexPhp\Tool\ToolResult;
+use Armin\AiAgent\Tool\ToolInterface;
+use Armin\AiAgent\Tool\ToolResult;
 
 final class EchoTool implements ToolInterface
 {
@@ -235,7 +235,7 @@ final class EchoTool implements ToolInterface
 $client->registerTool(new EchoTool());
 ```
 
-If a custom tool should be explained clearly to the model, implement `Armin\CodexPhp\Tool\ToolDescriptionInterface` as well. That description is used both for the generated system prompt and for the provider tool definition.
+If a custom tool should be explained clearly to the model, implement `Armin\AiAgent\Tool\ToolDescriptionInterface` as well. That description is used both for the generated system prompt and for the provider tool definition.
 
 Built-in tools are registered by default through the `ToolRegistry`. You can remove them and replace them with your own implementations:
 
@@ -251,7 +251,7 @@ If you want to start without built-in tools at all, disable them in the client c
 ```php
 <?php
 
-$client = new CodexClient(registerBuiltins: false);
+$client = new AiAgentClient(registerBuiltins: false);
 ```
 
 ## Built-in Tools

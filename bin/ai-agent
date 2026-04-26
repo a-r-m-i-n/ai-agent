@@ -3,9 +3,9 @@
 
 declare(strict_types=1);
 
-use Armin\CodexPhp\Console\CodexApplicationFactory;
+use Armin\AiAgent\Console\AiAgentApplicationFactory;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-$application = CodexApplicationFactory::create();
+$application = AiAgentApplicationFactory::create();
 $application->run();

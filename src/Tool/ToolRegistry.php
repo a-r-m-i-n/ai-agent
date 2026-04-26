@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tool;
+namespace Armin\AiAgent\Tool;
 
-use Armin\CodexPhp\Tool\Builtin\ApplyPatchTool;
-use Armin\CodexPhp\Tool\Builtin\ReadFileTool;
-use Armin\CodexPhp\Tool\Builtin\SearchTool;
-use Armin\CodexPhp\Tool\Builtin\ShellTool;
-use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
-use Armin\CodexPhp\Exception\ToolNotFound;
+use Armin\AiAgent\Tool\Builtin\ApplyPatchTool;
+use Armin\AiAgent\Tool\Builtin\ReadFileTool;
+use Armin\AiAgent\Tool\Builtin\SearchTool;
+use Armin\AiAgent\Tool\Builtin\ShellTool;
+use Armin\AiAgent\Tool\Builtin\ViewImageTool;
+use Armin\AiAgent\Exception\ToolNotFound;
 
 final class ToolRegistry
 {

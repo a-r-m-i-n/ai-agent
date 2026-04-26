@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Auth;
+namespace Armin\AiAgent\Auth;
 
-use Armin\CodexPhp\Exception\InvalidAuth;
+use Armin\AiAgent\Exception\InvalidAuth;
 
-final class CodexAuth
+final class AgentAuth
 {
     public const MODE_API_KEY = 'api_key';
     public const MODE_TOKENS = 'tokens';
@@ -15,7 +15,7 @@ final class CodexAuth
     public function __construct(
         private readonly string $authMode = '',
         private readonly ?string $apiKey = null,
-        private readonly ?CodexAuthTokens $tokens = null,
+        private readonly ?AgentAuthTokens $tokens = null,
         private readonly ?string $lastRefresh = null,
     ) {
         $this->validate();
@@ -50,7 +50,7 @@ final class CodexAuth
                 throw InvalidAuth::invalidField('tokens', 'null or an object');
             }
 
-            $tokens = new CodexAuthTokens(
+            $tokens = new AgentAuthTokens(
                 self::requireString($data['tokens'], 'tokens.id_token'),
                 self::requireString($data['tokens'], 'tokens.access_token'),
                 self::requireString($data['tokens'], 'tokens.refresh_token'),
@@ -63,7 +63,7 @@ final class CodexAuth
 
     public static function fromFile(string $path): self
     {
-        return (new CodexAuthFileLoader())->load($path);
+        return (new AgentAuthFileLoader())->load($path);
     }
 
     public function authMode(): string
@@ -76,7 +76,7 @@ final class CodexAuth
         return $this->apiKey;
     }
 
-    public function tokens(): ?CodexAuthTokens
+    public function tokens(): ?AgentAuthTokens
     {
         return $this->tokens;
     }

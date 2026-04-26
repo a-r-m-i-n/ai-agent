@@ -1,6 +1,6 @@
-# armin/codex-php
+# armin/ai-agent
 
-`armin/codex-php` is a small extensible Codex client for PHP. It ships with built-in tools for reading files, finding files, writing files, viewing images, generating images, and running local commands, while keeping the tool system open for consuming applications to register additional actions at runtime.
+`armin/ai-agent` is a generic AI code assistant client for PHP. It ships with built-in tools for reading files, finding files, writing files, viewing images, generating images, and running local commands, while keeping the tool system open for consuming applications to register additional actions at runtime.
 
 ## Requirements
 
@@ -10,21 +10,21 @@
 ## Installation
 
 ```bash
-composer require armin/codex-php
+composer require armin/ai-agent
 ```
 
 ## Quick Configuration
 
-The package reads the API key from `CODEX_API_KEY` by default. The CLI reads its default model from `CODEX_DEFAULT_MODEL`. Models must be configured as `provider:model`, for example `openai:gpt-5`.
+The package reads the API key from `AI_AGENT_API_KEY` by default. The CLI reads its default model from `AI_AGENT_DEFAULT_MODEL`. Models must be configured as `provider:model`, for example `openai:gpt-5`.
 
-The environment variable names are exposed as constants on `Armin\CodexPhp\CodexConfig`:
+The environment variable names are exposed as constants on `Armin\AiAgent\AiAgentConfig`:
 
-- `CodexConfig::API_KEY_ENV_VAR`
-- `CodexConfig::MODEL_ENV_VAR`
+- `AiAgentConfig::API_KEY_ENV_VAR`
+- `AiAgentConfig::MODEL_ENV_VAR`
 
 ```bash
-export CODEX_API_KEY=your-key
-export CODEX_DEFAULT_MODEL=openai:gpt-5
+export AI_AGENT_API_KEY=your-key
+export AI_AGENT_DEFAULT_MODEL=openai:gpt-5
 ```
 
 ## Documentation

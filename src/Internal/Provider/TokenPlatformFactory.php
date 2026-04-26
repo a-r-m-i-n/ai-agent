@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal\Provider;
+namespace Armin\AiAgent\Internal\Provider;
 
-use Armin\CodexPhp\Internal\ResolvedAuth;
+use Armin\AiAgent\Internal\ResolvedAuth;
 use Symfony\AI\Platform\Bridge\Anthropic;
 use Symfony\AI\Platform\Bridge\Anthropic\Contract\AnthropicContract;
 use Symfony\AI\Platform\Bridge\Gemini;

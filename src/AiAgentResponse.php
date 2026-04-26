@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp;
+namespace Armin\AiAgent;
 
-final class CodexResponse
+final class AiAgentResponse
 {
     /**
      * @param list<array{id?: string, name: string, arguments: array<string, mixed>}> $toolCalls

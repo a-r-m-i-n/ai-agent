@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal;
+namespace Armin\AiAgent\Tests\Internal;
 
-use Armin\CodexPhp\CodexResponse;
-use Armin\CodexPhp\Internal\CodexTokenUsageExtractor;
+use Armin\AiAgent\AiAgentResponse;
+use Armin\AiAgent\Internal\AiAgentTokenUsageExtractor;
 use PHPUnit\Framework\TestCase;
 
-final class CodexTokenUsageExtractorTest extends TestCase
+final class AiAgentTokenUsageExtractorTest extends TestCase
 {
     public function testFromResponseExtractsImageGenerationUsage(): void
     {
-        $extractor = new CodexTokenUsageExtractor();
-        $response = new CodexResponse(
+        $extractor = new AiAgentTokenUsageExtractor();
+        $response = new AiAgentResponse(
             content: 'done',
             model: 'openai:gpt-5',
             metadata: [
@@ -49,8 +49,8 @@ final class CodexTokenUsageExtractorTest extends TestCase
 
     public function testFromResponseDefaultsMissingUsageDetailFieldsToZero(): void
     {
-        $extractor = new CodexTokenUsageExtractor();
-        $response = new CodexResponse(
+        $extractor = new AiAgentTokenUsageExtractor();
+        $response = new AiAgentResponse(
             content: 'done',
             model: 'openai:gpt-5',
             metadata: [
@@ -80,8 +80,8 @@ final class CodexTokenUsageExtractorTest extends TestCase
 
     public function testFromResponseAggregatesNestedAssistantMetadataRecursively(): void
     {
-        $extractor = new CodexTokenUsageExtractor();
-        $response = new CodexResponse(
+        $extractor = new AiAgentTokenUsageExtractor();
+        $response = new AiAgentResponse(
             content: 'done',
             model: 'openai:gpt-5',
             metadata: [
@@ -137,8 +137,8 @@ final class CodexTokenUsageExtractorTest extends TestCase
 
     public function testFromResponseNormalizesGeminiCachedInputMetadata(): void
     {
-        $extractor = new CodexTokenUsageExtractor();
-        $response = new CodexResponse(
+        $extractor = new AiAgentTokenUsageExtractor();
+        $response = new AiAgentResponse(
             content: 'done',
             model: 'gemini:gemini-2.5-flash',
             metadata: [
@@ -169,8 +169,8 @@ final class CodexTokenUsageExtractorTest extends TestCase
 
     public function testFromResponseNormalizesAnthropicCacheReadTokens(): void
     {
-        $extractor = new CodexTokenUsageExtractor();
-        $response = new CodexResponse(
+        $extractor = new AiAgentTokenUsageExtractor();
+        $response = new AiAgentResponse(
             content: 'done',
             model: 'anthropic:claude-sonnet-4-6',
             metadata: [

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal\Session;
+namespace Armin\AiAgent\Internal\Session;
 
-final class CodexSession
+final class AgentSession
 {
     /**
      * @param list<array{

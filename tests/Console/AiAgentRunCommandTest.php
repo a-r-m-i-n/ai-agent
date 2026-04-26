@@ -2,27 +2,27 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Console;
+namespace Armin\AiAgent\Tests\Console;
 
-use Armin\CodexPhp\CodexClient;
-use Armin\CodexPhp\CodexConfig;
-use Armin\CodexPhp\CodexResponse;
-use Armin\CodexPhp\Console\CodexRunCommand;
-use Armin\CodexPhp\Exception\MissingApiKey;
-use Armin\CodexPhp\Exception\MissingModel;
-use Armin\CodexPhp\Internal\CodexRuntimeInterface;
+use Armin\AiAgent\AiAgentClient;
+use Armin\AiAgent\AiAgentConfig;
+use Armin\AiAgent\AiAgentResponse;
+use Armin\AiAgent\Console\AiAgentRunCommand;
+use Armin\AiAgent\Exception\MissingApiKey;
+use Armin\AiAgent\Exception\MissingModel;
+use Armin\AiAgent\Internal\AiAgentRuntimeInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandTester;
 
-final class CodexRunCommandTest extends TestCase
+final class AiAgentRunCommandTest extends TestCase
 {
     private array $temporaryFiles = [];
 
     protected function tearDown(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR);
-        putenv(CodexConfig::MODEL_ENV_VAR);
+        putenv(AiAgentConfig::API_KEY_ENV_VAR);
+        putenv(AiAgentConfig::MODEL_ENV_VAR);
 
         foreach ($this->temporaryFiles as $file) {
             @unlink($file);
@@ -33,41 +33,41 @@ final class CodexRunCommandTest extends TestCase
 
     public function testCommandOutputsPlainTextUsingEnvironmentDefaults(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
         ]);
 
-        self::assertSame("Hello from Codex\n", $tester->getDisplay());
+        self::assertSame("Hello from AI agent\n", $tester->getDisplay());
     }
 
     public function testOptionsOverrideEnvironmentValues(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=env-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:env-model');
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=env-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:env-model');
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
             '--model' => 'anthropic:claude-3-5-haiku-20241022',
             '--key' => 'override-key',
         ]);
 
-        self::assertSame("Hello from Codex\n", $tester->getDisplay());
+        self::assertSame("Hello from AI agent\n", $tester->getDisplay());
     }
 
     public function testExistingPromptFileIsLoadedAsPromptContent(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
-        $promptFile = sys_get_temp_dir() . '/codex-prompt-' . bin2hex(random_bytes(4)) . '.txt';
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        $promptFile = sys_get_temp_dir() . '/ai-agent-prompt-' . bin2hex(random_bytes(4)) . '.txt';
         $this->temporaryFiles[] = $promptFile;
         file_put_contents($promptFile, 'Prompt from file');
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createEchoClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createEchoClientStub()));
         $tester->execute([
             'prompt' => $promptFile,
         ]);
@@ -77,11 +77,11 @@ final class CodexRunCommandTest extends TestCase
 
     public function testMissingPromptFilePathRemainsLiteralPrompt(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
-        $missingPath = sys_get_temp_dir() . '/codex-missing-' . bin2hex(random_bytes(4)) . '.txt';
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        $missingPath = sys_get_temp_dir() . '/ai-agent-missing-' . bin2hex(random_bytes(4)) . '.txt';
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createEchoClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createEchoClientStub()));
         $tester->execute([
             'prompt' => $missingPath,
         ]);
@@ -91,14 +91,14 @@ final class CodexRunCommandTest extends TestCase
 
     public function testPromptContainingAdditionalTextIsNotResolvedAsFile(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
-        $promptFile = sys_get_temp_dir() . '/codex-prompt-' . bin2hex(random_bytes(4)) . '.txt';
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        $promptFile = sys_get_temp_dir() . '/ai-agent-prompt-' . bin2hex(random_bytes(4)) . '.txt';
         $this->temporaryFiles[] = $promptFile;
         file_put_contents($promptFile, 'Prompt from file');
         $prompt = $promptFile . ' please summarize';
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createEchoClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createEchoClientStub()));
         $tester->execute([
             'prompt' => $prompt,
         ]);
@@ -108,11 +108,11 @@ final class CodexRunCommandTest extends TestCase
 
     public function testVerboseExecutionPrintsSystemPromptUserPromptOutputAndStatistics(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
-        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        $sessionFile = sys_get_temp_dir() . '/ai-agent-session-' . bin2hex(random_bytes(4)) . '.json';
         $this->temporaryFiles[] = $sessionFile;
-        $config = new CodexConfig(sessionFile: $sessionFile);
+        $config = new AiAgentConfig(sessionFile: $sessionFile);
         file_put_contents($sessionFile, json_encode([
             'version' => 1,
             'messages' => [
@@ -132,7 +132,7 @@ final class CodexRunCommandTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $tester = new CommandTester(new CodexRunCommand(config: $config, client: $this->createClientStub($config)));
+        $tester = new CommandTester(new AiAgentRunCommand(config: $config, client: $this->createClientStub($config)));
         $tester->execute([
             'prompt' => 'Say hello',
         ], [
@@ -150,9 +150,9 @@ final class CodexRunCommandTest extends TestCase
         self::assertStringContainsString('User prompt:', $display);
         self::assertStringContainsString('Say hello', $display);
         self::assertStringContainsString('Output:', $display);
-        self::assertStringContainsString("Hello from Codex\n", $display);
+        self::assertStringContainsString("Hello from AI agent\n", $display);
         self::assertStringContainsString('Statistics:', $display);
-        self::assertStringContainsString("Hello from Codex\n", $display);
+        self::assertStringContainsString("Hello from AI agent\n", $display);
         self::assertStringContainsString('Metric', $display);
         self::assertStringContainsString('Request', $display);
         self::assertStringContainsString('Session', $display);
@@ -171,10 +171,10 @@ final class CodexRunCommandTest extends TestCase
 
     public function testVeryVerboseExecutionMatchesVerboseStructure(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
         ], [
@@ -202,10 +202,10 @@ final class CodexRunCommandTest extends TestCase
 
     public function testDebugVerbosityMatchesVerboseBehavior(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
         ], [
@@ -223,7 +223,7 @@ final class CodexRunCommandTest extends TestCase
 
     public function testDebugSystemPromptOutputsOnlyBuiltPromptWithoutClientRequest(): void
     {
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
             '--debug' => 'system_prompt',
@@ -234,13 +234,13 @@ final class CodexRunCommandTest extends TestCase
         self::assertStringContainsString('Available tools:', $display);
         self::assertStringContainsString('Repository context:', $display);
         self::assertStringContainsString('Working directory: ' . getcwd(), $display);
-        self::assertStringNotContainsString('Hello from Codex', $display);
+        self::assertStringNotContainsString('Hello from AI agent', $display);
         self::assertStringNotContainsString('Statistics:', $display);
     }
 
     public function testDebugStatisticsOutputsSessionTableWithoutRequestColumnOrClientRequest(): void
     {
-        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        $sessionFile = sys_get_temp_dir() . '/ai-agent-session-' . bin2hex(random_bytes(4)) . '.json';
         $this->temporaryFiles[] = $sessionFile;
         file_put_contents($sessionFile, json_encode([
             'version' => 1,
@@ -282,7 +282,7 @@ final class CodexRunCommandTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
             '--session-file' => $sessionFile,
@@ -300,12 +300,12 @@ final class CodexRunCommandTest extends TestCase
         self::assertStringNotContainsString('Request', $display);
         self::assertStringContainsString('3.300', $display);
         self::assertStringContainsString('read_file:1, search:1', $display);
-        self::assertStringNotContainsString('Hello from Codex', $display);
+        self::assertStringNotContainsString('Hello from AI agent', $display);
     }
 
     public function testDebugRejectsUnsupportedMode(): void
     {
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Invalid debug mode "invalid"');
@@ -318,7 +318,7 @@ final class CodexRunCommandTest extends TestCase
 
     public function testDebugHistoryOutputsRequestsResponsesAndToolCallsFromSession(): void
     {
-        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        $sessionFile = sys_get_temp_dir() . '/ai-agent-session-' . bin2hex(random_bytes(4)) . '.json';
         $this->temporaryFiles[] = $sessionFile;
         file_put_contents($sessionFile, json_encode([
             'version' => 1,
@@ -370,7 +370,7 @@ final class CodexRunCommandTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
         $tester->execute([
             'prompt' => 'Ignored prompt',
             '--session-file' => $sessionFile,
@@ -392,7 +392,7 @@ final class CodexRunCommandTest extends TestCase
         self::assertStringContainsString('Request 2', $display);
         self::assertStringContainsString('Second prompt', $display);
         self::assertStringContainsString('Final answer three', $display);
-        self::assertStringNotContainsString('Hello from Codex', $display);
+        self::assertStringNotContainsString('Hello from AI agent', $display);
         self::assertStringNotContainsString('Tool result:', $display);
         self::assertStringNotContainsString('tool_call_id: call-1', $display);
         self::assertStringNotContainsString('{"success":true}', $display);
@@ -401,7 +401,7 @@ final class CodexRunCommandTest extends TestCase
 
     public function testDebugHistoryRequiresSessionFileOption(): void
     {
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Debug mode "history" requires --session-file.');
@@ -414,8 +414,8 @@ final class CodexRunCommandTest extends TestCase
 
     public function testDebugHistoryRequiresExistingSessionFile(): void
     {
-        $missingSessionFile = sys_get_temp_dir() . '/codex-missing-session-' . bin2hex(random_bytes(4)) . '.json';
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $missingSessionFile = sys_get_temp_dir() . '/ai-agent-missing-session-' . bin2hex(random_bytes(4)) . '.json';
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Debug mode "history" requires an existing session file.');
@@ -429,7 +429,7 @@ final class CodexRunCommandTest extends TestCase
 
     public function testDebugHistoryFallsBackToFinalResponseTextWhenAssistantContentIsEmpty(): void
     {
-        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        $sessionFile = sys_get_temp_dir() . '/ai-agent-session-' . bin2hex(random_bytes(4)) . '.json';
         $this->temporaryFiles[] = $sessionFile;
         file_put_contents($sessionFile, json_encode([
             'version' => 1,
@@ -460,7 +460,7 @@ final class CodexRunCommandTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createFailingClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
         $tester->execute([
             'prompt' => 'Ignored prompt',
             '--session-file' => $sessionFile,
@@ -475,10 +475,10 @@ final class CodexRunCommandTest extends TestCase
 
     public function testVerboseExecutionHidesRowsWhenRequestAndSessionTokensAreBothZero(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createZeroUsageClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createZeroUsageClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
         ], [
@@ -491,7 +491,7 @@ final class CodexRunCommandTest extends TestCase
         self::assertStringContainsString('User prompt:', $display);
         self::assertStringContainsString('Output:', $display);
         self::assertStringContainsString('Statistics:', $display);
-        self::assertStringContainsString("Hello from Codex\n", $display);
+        self::assertStringContainsString("Hello from AI agent\n", $display);
         self::assertStringContainsString('Metric', $display);
         self::assertStringNotContainsString('cached_input', $display);
         self::assertStringNotContainsString('image_generation_total', $display);
@@ -502,10 +502,10 @@ final class CodexRunCommandTest extends TestCase
 
     public function testVerboseExecutionOmitsContextPercentageAndCostForUnknownModel(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:unknown-model');
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:unknown-model');
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createUnknownModelClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createUnknownModelClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
         ], [
@@ -521,22 +521,22 @@ final class CodexRunCommandTest extends TestCase
 
     public function testSessionFileOptionMutatesConfigBeforeClientRequest(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
-        $config = new CodexConfig();
-        $sessionFile = sys_get_temp_dir() . '/codex-session-' . bin2hex(random_bytes(4)) . '.json';
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        $config = new AiAgentConfig();
+        $sessionFile = sys_get_temp_dir() . '/ai-agent-session-' . bin2hex(random_bytes(4)) . '.json';
         $this->temporaryFiles[] = $sessionFile;
         file_put_contents($sessionFile, json_encode(['version' => 1, 'messages' => []], JSON_THROW_ON_ERROR));
-        $client = new CodexClient($config, runtime: new class($config) implements CodexRuntimeInterface {
+        $client = new AiAgentClient($config, runtime: new class($config) implements AiAgentRuntimeInterface {
             public function __construct(
-                private readonly CodexConfig $config,
+                private readonly AiAgentConfig $config,
             ) {
             }
 
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse(
-                    content: 'Hello from Codex',
+                return new AiAgentResponse(
+                    content: 'Hello from AI agent',
                     model: 'openai:gpt-5.4',
                     metadata: [
                         'system_prompt' => 'System prompt',
@@ -551,7 +551,7 @@ final class CodexRunCommandTest extends TestCase
             }
         });
 
-        $tester = new CommandTester(new CodexRunCommand(config: $config, client: $client));
+        $tester = new CommandTester(new AiAgentRunCommand(config: $config, client: $client));
         $tester->execute([
             'prompt' => 'Say hello',
             '--session-file' => $sessionFile,
@@ -560,12 +560,12 @@ final class CodexRunCommandTest extends TestCase
         ]);
 
         self::assertSame($sessionFile, $config->sessionFile());
-        self::assertStringContainsString('Hello from Codex', $tester->getDisplay());
+        self::assertStringContainsString('Hello from AI agent', $tester->getDisplay());
     }
 
     public function testAuthFileProvidesCredentialWhenApiKeyIsMissing(): void
     {
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
 
         $authFile = $this->createAuthFile([
             'auth_mode' => 'tokens',
@@ -578,18 +578,18 @@ final class CodexRunCommandTest extends TestCase
             ],
         ]);
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
             '--auth-file' => $authFile,
         ]);
 
-        self::assertSame("Hello from Codex\n", $tester->getDisplay());
+        self::assertSame("Hello from AI agent\n", $tester->getDisplay());
     }
 
     public function testAuthFileProvidesCredentialWhenChatGptModeIsUsed(): void
     {
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
 
         $authFile = $this->createAuthFile([
             'auth_mode' => 'chatgpt',
@@ -602,18 +602,18 @@ final class CodexRunCommandTest extends TestCase
             ],
         ]);
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
             '--auth-file' => $authFile,
         ]);
 
-        self::assertSame("Hello from Codex\n", $tester->getDisplay());
+        self::assertSame("Hello from AI agent\n", $tester->getDisplay());
     }
 
     public function testKeyOptionOverridesAuthFile(): void
     {
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
 
         $authFile = $this->createAuthFile([
             'auth_mode' => 'tokens',
@@ -626,21 +626,21 @@ final class CodexRunCommandTest extends TestCase
             ],
         ]);
 
-        $tester = new CommandTester(new CodexRunCommand(client: $this->createClientStub()));
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
             '--auth-file' => $authFile,
             '--key' => 'override-key',
         ]);
 
-        self::assertSame("Hello from Codex\n", $tester->getDisplay());
+        self::assertSame("Hello from AI agent\n", $tester->getDisplay());
     }
 
     public function testMissingApiKeyThrowsWhenNoEnvAndNoAuthFileAreAvailable(): void
     {
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
 
-        $tester = new CommandTester(new CodexRunCommand());
+        $tester = new CommandTester(new AiAgentRunCommand());
 
         $this->expectException(MissingApiKey::class);
 
@@ -651,9 +651,9 @@ final class CodexRunCommandTest extends TestCase
 
     public function testMissingModelThrows(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
 
-        $tester = new CommandTester(new CodexRunCommand());
+        $tester = new CommandTester(new AiAgentRunCommand());
 
         $this->expectException(MissingModel::class);
 
@@ -664,9 +664,9 @@ final class CodexRunCommandTest extends TestCase
 
     public function testMissingApiKeyThrows(): void
     {
-        putenv(CodexConfig::MODEL_ENV_VAR . '=openai:gpt-5');
+        putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
 
-        $tester = new CommandTester(new CodexRunCommand());
+        $tester = new CommandTester(new AiAgentRunCommand());
 
         $this->expectException(MissingApiKey::class);
 
@@ -675,13 +675,13 @@ final class CodexRunCommandTest extends TestCase
         ]);
     }
 
-    private function createClientStub(?CodexConfig $config = null): CodexClient
+    private function createClientStub(?AiAgentConfig $config = null): AiAgentClient
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse(
-                    content: 'Hello from Codex',
+                return new AiAgentResponse(
+                    content: 'Hello from AI agent',
                     model: 'openai:gpt-5.4',
                     toolCalls: [
                         ['name' => 'read_file', 'arguments' => ['path' => '/tmp/example.txt']],
@@ -709,16 +709,16 @@ final class CodexRunCommandTest extends TestCase
             }
         };
 
-        return new CodexClient($config ?? new CodexConfig(), runtime: $runtime);
+        return new AiAgentClient($config ?? new AiAgentConfig(), runtime: $runtime);
     }
 
-    private function createZeroUsageClientStub(): CodexClient
+    private function createZeroUsageClientStub(): AiAgentClient
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse(
-                    content: 'Hello from Codex',
+                return new AiAgentResponse(
+                    content: 'Hello from AI agent',
                     model: 'openai:gpt-5.4',
                     metadata: [
                         'system_prompt' => 'System prompt',
@@ -738,15 +738,15 @@ final class CodexRunCommandTest extends TestCase
             }
         };
 
-        return new CodexClient(runtime: $runtime);
+        return new AiAgentClient(runtime: $runtime);
     }
 
-    private function createEchoClientStub(): CodexClient
+    private function createEchoClientStub(): AiAgentClient
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse(
+                return new AiAgentResponse(
                     content: $prompt,
                     model: 'openai:gpt-5',
                     metadata: [
@@ -761,16 +761,16 @@ final class CodexRunCommandTest extends TestCase
             }
         };
 
-        return new CodexClient(runtime: $runtime);
+        return new AiAgentClient(runtime: $runtime);
     }
 
-    private function createUnknownModelClientStub(): CodexClient
+    private function createUnknownModelClientStub(): AiAgentClient
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse(
-                    content: 'Hello from Codex',
+                return new AiAgentResponse(
+                    content: 'Hello from AI agent',
                     model: 'openai:unknown-model',
                     metadata: [
                         'system_prompt' => 'System prompt',
@@ -791,13 +791,13 @@ final class CodexRunCommandTest extends TestCase
             }
         };
 
-        return new CodexClient(runtime: $runtime);
+        return new AiAgentClient(runtime: $runtime);
     }
 
-    private function createFailingClientStub(): CodexClient
+    private function createFailingClientStub(): AiAgentClient
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
                 throw new \RuntimeException('Client request must not be executed.');
             }
@@ -808,7 +808,7 @@ final class CodexRunCommandTest extends TestCase
             }
         };
 
-        return new CodexClient(runtime: $runtime);
+        return new AiAgentClient(runtime: $runtime);
     }
 
     /**
@@ -816,7 +816,7 @@ final class CodexRunCommandTest extends TestCase
      */
     private function createAuthFile(array $payload): string
     {
-        $path = tempnam(sys_get_temp_dir(), 'codex-auth-');
+        $path = tempnam(sys_get_temp_dir(), 'ai-agent-auth-');
         self::assertNotFalse($path);
         file_put_contents($path, json_encode($payload, JSON_THROW_ON_ERROR));
         $this->temporaryFiles[] = $path;

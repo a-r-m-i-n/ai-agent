@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests;
+namespace Armin\AiAgent\Tests;
 
-use Armin\CodexPhp\CodexTokenUsage;
+use Armin\AiAgent\AiAgentTokenUsage;
 use PHPUnit\Framework\TestCase;
 
-final class CodexTokenUsageTest extends TestCase
+final class AiAgentTokenUsageTest extends TestCase
 {
     public function testToJsonFiltersZeroValuesButKeepsTotal(): void
     {
-        $usage = new CodexTokenUsage(
+        $usage = new AiAgentTokenUsage(
             input: 10,
             cachedInput: 0,
             output: 2,
@@ -32,7 +32,7 @@ final class CodexTokenUsageTest extends TestCase
 
     public function testToJsonSupportsPrettyPrinting(): void
     {
-        $usage = new CodexTokenUsage(
+        $usage = new AiAgentTokenUsage(
             input: 1,
             total: 1,
             toolCalls: 1,

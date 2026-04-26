@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\Auth\CodexAuth;
-use Armin\CodexPhp\CodexConfig;
-use Armin\CodexPhp\CodexResponse;
-use Armin\CodexPhp\Exception\ModelDoesNotSupportImageInput;
-use Armin\CodexPhp\Exception\MissingModel;
-use Armin\CodexPhp\Internal\Provider\TokenPlatformFactory;
-use Armin\CodexPhp\Internal\Session\CodexSession;
-use Armin\CodexPhp\Internal\Session\CodexSessionStore;
+use Armin\AiAgent\Auth\AgentAuth;
+use Armin\AiAgent\AiAgentConfig;
+use Armin\AiAgent\AiAgentResponse;
+use Armin\AiAgent\Exception\ModelDoesNotSupportImageInput;
+use Armin\AiAgent\Exception\MissingModel;
+use Armin\AiAgent\Internal\Provider\TokenPlatformFactory;
+use Armin\AiAgent\Internal\Session\AgentSession;
+use Armin\AiAgent\Internal\Session\AgentSessionStore;
 use Symfony\AI\Platform\Bridge\Anthropic\Factory as AnthropicFactory;
 use Symfony\AI\Platform\Bridge\Gemini\Factory as GeminiFactory;
-use Armin\CodexPhp\Tool\ToolRegistry;
+use Armin\AiAgent\Tool\ToolRegistry;
 use Symfony\AI\Platform\Bridge\OpenAi\Factory as OpenAiFactory;
 use Symfony\AI\Platform\Capability;
 use Symfony\AI\Platform\PlatformInterface;
@@ -27,15 +27,15 @@ use Symfony\AI\Platform\StructuredOutput\Serializer;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\AI\Platform\Result\ToolCall;
 
-final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
+final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
 {
     private const MAX_TOOL_ITERATIONS = 100;
 
     public function __construct(
-        private readonly CodexConfig $config,
+        private readonly AiAgentConfig $config,
         private readonly ToolRegistry $toolRegistry,
         private readonly ?HttpClientInterface $httpClient = null,
-        private readonly CodexResponseMapper $responseMapper = new CodexResponseMapper(),
+        private readonly AiAgentResponseMapper $responseMapper = new AiAgentResponseMapper(),
         private readonly ModelNameParser $modelNameParser = new ModelNameParser(),
         private readonly AuthResolver $authResolver = new AuthResolver(),
         private readonly ?SystemPromptBuilderInterface $systemPromptBuilder = null,
@@ -44,7 +44,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
     ) {
     }
 
-    public function request(string $prompt, ?string $responseClass = null): CodexResponse
+    public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
     {
         $model = $this->config->model();
 
@@ -58,7 +58,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         $attachments = ($this->imageAttachmentResolver ?? new LocalImageAttachmentResolver($this->config->workingDirectory()))
             ->detectFromPrompt($prompt);
         $sessionStore = $this->createSessionStore();
-        $session = $sessionStore?->load() ?? new CodexSession();
+        $session = $sessionStore?->load() ?? new AgentSession();
         $loadedMessageCount = $session->count();
 
         if ($attachments !== [] && !$platform->getModelCatalog()->getModel($resolvedModel->model())->supports(Capability::INPUT_IMAGE)) {
@@ -97,7 +97,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         $requestAssistantMessages = [];
         $response = null;
 
-        if ($sessionStore instanceof CodexSessionStore) {
+        if ($sessionStore instanceof AgentSessionStore) {
             $session->appendUserMessage($prompt);
             $this->persistSession($sessionStore, $session);
         }
@@ -105,7 +105,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         for ($iteration = 0; ; ++$iteration) {
             $response = $this->callModel($platform, $resolvedModel->model(), $resolvedModel->qualifiedName(), $messageBag, $requestOptions);
 
-            if ($sessionStore instanceof CodexSessionStore && $response->toolCalls() !== []) {
+            if ($sessionStore instanceof AgentSessionStore && $response->toolCalls() !== []) {
                 $session->appendAssistantMessage($response->content(), $response->toolCalls(), $response->metadata());
                 $this->persistSession($sessionStore, $session);
             }
@@ -142,7 +142,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             foreach ($assistantToolCalls as $toolCall) {
                 $toolResult = $this->executeToolCall($toolCall);
                 $messageBag->add(Message::ofToolCall($toolCall, $toolResult['message']));
-                if ($sessionStore instanceof CodexSessionStore) {
+                if ($sessionStore instanceof AgentSessionStore) {
                     $session->appendToolMessage($toolResult['message'], $toolCall->getId());
                     $this->persistSession($sessionStore, $session);
                 }
@@ -166,7 +166,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             }
         }
 
-        if (!$response instanceof CodexResponse) {
+        if (!$response instanceof AiAgentResponse) {
             throw new \RuntimeException('The model did not return a response.');
         }
 
@@ -193,7 +193,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
                     ? sprintf('Generated image saved to %s.', $filenames[0])
                     : sprintf('Generated %d images.', \count($generatedImagesMetadata));
 
-                $response = new CodexResponse(
+                $response = new AiAgentResponse(
                     $content,
                     $response->model(),
                     $response->toolCalls(),
@@ -206,7 +206,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             $metadata['request_assistant_messages'] = $requestAssistantMessages;
         }
 
-        if ($sessionStore instanceof CodexSessionStore) {
+        if ($sessionStore instanceof AgentSessionStore) {
             $session->appendAssistantMessage($response->content(), $response->toolCalls(), $metadata);
             $this->persistSession($sessionStore, $session);
 
@@ -218,7 +218,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             ];
         }
 
-        return new CodexResponse(
+        return new AiAgentResponse(
             $response->content(),
             $response->model(),
             $response->toolCalls(),
@@ -235,7 +235,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
 
     private function createPlatform(string $provider, ResolvedAuth $auth): PlatformInterface
     {
-        if ($auth->mode() === CodexAuth::MODE_TOKENS) {
+        if ($auth->mode() === AgentAuth::MODE_TOKENS) {
             return TokenPlatformFactory::create($provider, $auth, $this->httpClient);
         }
 
@@ -259,7 +259,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
     {
         $options = [];
 
-        if ($provider === 'openai' && $auth->mode() === CodexAuth::MODE_TOKENS) {
+        if ($provider === 'openai' && $auth->mode() === AgentAuth::MODE_TOKENS) {
             $options['stream'] = true;
         }
 
@@ -378,7 +378,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         return $requestOptions;
     }
 
-    private function createSessionStore(): ?CodexSessionStore
+    private function createSessionStore(): ?AgentSessionStore
     {
         $sessionFile = $this->config->sessionFile();
 
@@ -386,15 +386,15 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
             return null;
         }
 
-        return new CodexSessionStore($sessionFile);
+        return new AgentSessionStore($sessionFile);
     }
 
-    private function persistSession(CodexSessionStore $sessionStore, CodexSession $session): void
+    private function persistSession(AgentSessionStore $sessionStore, AgentSession $session): void
     {
         $sessionStore->save($session);
     }
 
-    private function createMessageBagFromSession(CodexSession $session, string $systemPrompt): MessageBag
+    private function createMessageBagFromSession(AgentSession $session, string $systemPrompt): MessageBag
     {
         $messageBag = new MessageBag(Message::forSystem($systemPrompt));
 
@@ -438,7 +438,7 @@ final class SymfonyAiCodexRuntime implements CodexRuntimeInterface
         string $qualifiedModel,
         MessageBag $messageBag,
         array $requestOptions,
-    ): CodexResponse {
+    ): AiAgentResponse {
         return $this->responseMapper->map(
             $qualifiedModel,
             $platform->invoke($model, $messageBag, $requestOptions)->getResult(),

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tool\Builtin;
+namespace Armin\AiAgent\Tool\Builtin;
 
-use Armin\CodexPhp\Exception\InvalidToolInput;
+use Armin\AiAgent\Exception\InvalidToolInput;
 
 abstract class AbstractTool
 {

@@ -2,34 +2,34 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp;
+namespace Armin\AiAgent;
 
-use Armin\CodexPhp\Auth\CodexAuth;
-use Armin\CodexPhp\Exception\ToolNotFound;
-use Armin\CodexPhp\Internal\CodexRuntimeInterface;
-use Armin\CodexPhp\Internal\CodexTokenUsageExtractor;
-use Armin\CodexPhp\Internal\DefaultSystemPromptBuilder;
-use Armin\CodexPhp\Internal\Session\CodexSessionStore;
-use Armin\CodexPhp\Internal\SystemPromptBuilderInterface;
-use Armin\CodexPhp\Internal\SymfonyAiCodexRuntime;
-use Armin\CodexPhp\Tool\ToolInterface;
-use Armin\CodexPhp\Tool\ToolRegistry;
-use Armin\CodexPhp\Tool\ToolResult;
+use Armin\AiAgent\Auth\AgentAuth;
+use Armin\AiAgent\Exception\ToolNotFound;
+use Armin\AiAgent\Internal\AiAgentRuntimeInterface;
+use Armin\AiAgent\Internal\AiAgentTokenUsageExtractor;
+use Armin\AiAgent\Internal\DefaultSystemPromptBuilder;
+use Armin\AiAgent\Internal\Session\AgentSessionStore;
+use Armin\AiAgent\Internal\SystemPromptBuilderInterface;
+use Armin\AiAgent\Internal\SymfonyAiAgentRuntime;
+use Armin\AiAgent\Tool\ToolInterface;
+use Armin\AiAgent\Tool\ToolRegistry;
+use Armin\AiAgent\Tool\ToolResult;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
-final class CodexClient
+final class AiAgentClient
 {
     private readonly ToolRegistry $toolRegistry;
-    private readonly CodexRuntimeInterface $runtime;
-    private readonly CodexTokenUsageExtractor $tokenUsageExtractor;
-    private ?CodexResponse $lastResponse = null;
+    private readonly AiAgentRuntimeInterface $runtime;
+    private readonly AiAgentTokenUsageExtractor $tokenUsageExtractor;
+    private ?AiAgentResponse $lastResponse = null;
 
     public function __construct(
-        private readonly CodexConfig $config = new CodexConfig(),
+        private readonly AiAgentConfig $config = new AiAgentConfig(),
         ?ToolRegistry $toolRegistry = null,
         bool $registerBuiltins = true,
         ?HttpClientInterface $httpClient = null,
-        ?CodexRuntimeInterface $runtime = null,
+        ?AiAgentRuntimeInterface $runtime = null,
         ?SystemPromptBuilderInterface $systemPromptBuilder = null,
     ) {
         $this->toolRegistry = $toolRegistry ?? ($registerBuiltins
@@ -40,9 +40,9 @@ final class CodexClient
             $this->toolRegistry->registerBuiltins($this->config->workingDirectory());
         }
 
-        $this->tokenUsageExtractor = new CodexTokenUsageExtractor();
+        $this->tokenUsageExtractor = new AiAgentTokenUsageExtractor();
 
-        $this->runtime = $runtime ?? new SymfonyAiCodexRuntime(
+        $this->runtime = $runtime ?? new SymfonyAiAgentRuntime(
             $this->config,
             $this->toolRegistry,
             $httpClient,
@@ -50,7 +50,7 @@ final class CodexClient
         );
     }
 
-    public function config(): CodexConfig
+    public function config(): AiAgentConfig
     {
         return $this->config;
     }
@@ -60,7 +60,7 @@ final class CodexClient
         return $this->config->apiKey();
     }
 
-    public function auth(): ?CodexAuth
+    public function auth(): ?AgentAuth
     {
         return $this->config->auth();
     }
@@ -84,7 +84,7 @@ final class CodexClient
         return $this->toolRegistry->has($name);
     }
 
-    public function request(string $prompt, ?string $responseClass = null): CodexResponse
+    public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
     {
         return $this->lastResponse = $this->runtime->request($prompt, $responseClass);
     }
@@ -123,27 +123,27 @@ final class CodexClient
         return $this->toolRegistry->all();
     }
 
-    public function getRequestTokens(): CodexTokenUsage
+    public function getRequestTokens(): AiAgentTokenUsage
     {
-        if (!$this->lastResponse instanceof CodexResponse) {
-            return new CodexTokenUsage();
+        if (!$this->lastResponse instanceof AiAgentResponse) {
+            return new AiAgentTokenUsage();
         }
 
         return $this->tokenUsageExtractor->fromResponse($this->lastResponse);
     }
 
-    public function getSessionTokens(): CodexTokenUsage
+    public function getSessionTokens(): AiAgentTokenUsage
     {
         $sessionFile = $this->config->sessionFile();
 
         if ($sessionFile === null) {
-            return new CodexTokenUsage();
+            return new AiAgentTokenUsage();
         }
 
-        $store = new CodexSessionStore($sessionFile);
+        $store = new AgentSessionStore($sessionFile);
 
         if (!$store->exists()) {
-            return new CodexTokenUsage();
+            return new AiAgentTokenUsage();
         }
 
         return $this->tokenUsageExtractor->fromSession($store->load());

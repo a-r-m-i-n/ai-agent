@@ -5,29 +5,29 @@
 The package ships with a Composer binary:
 
 ```bash
-vendor/bin/codex "Explain this repository"
+vendor/bin/ai-agent "Explain this repository"
 ```
 
 Inside DDEV you can use:
 
 ```bash
-ddev exec php vendor/bin/codex "Explain this repository"
+ddev exec php vendor/bin/ai-agent "Explain this repository"
 ```
 
 ## Configuration
 
-The CLI reads the API key from `CODEX_API_KEY` and its default model from `CODEX_DEFAULT_MODEL`.
+The CLI reads the API key from `AI_AGENT_API_KEY` and its default model from `AI_AGENT_DEFAULT_MODEL`.
 
 Models must be configured as `provider:model`, for example `openai:gpt-5`.
 
 CLI options:
 
-- `--model` overrides `CODEX_DEFAULT_MODEL`
-- `--key` overrides `CODEX_API_KEY`
+- `--model` overrides `AI_AGENT_DEFAULT_MODEL`
+- `--key` overrides `AI_AGENT_API_KEY`
 - `--auth-file` loads credentials from an `auth.json` file
 - `--session-file` persists and reloads conversation history from a JSON file
 
-Internally, the CLI applies `--model` and `--key` by updating the `CodexConfig` instance before the request is executed.
+Internally, the CLI applies `--model` and `--key` by updating the `AiAgentConfig` instance before the request is executed.
 
 If the `prompt` argument consists only of a file path or file name and that file exists, the CLI loads the prompt text from that file. If the file does not exist, or the argument contains additional text, the value is sent as a normal literal prompt.
 
@@ -51,28 +51,28 @@ The CLI mode is non-interactive. Use `--session-file` if you want multi-turn his
 Example with `auth.json`:
 
 ```bash
-vendor/bin/codex "Summarize this repository" --model=openai:gpt-5.4-nano --auth-file=./auth.json
+vendor/bin/ai-agent "Summarize this repository" --model=openai:gpt-5.4-nano --auth-file=./auth.json
 ```
 
 Example with a reusable session file:
 
 ```bash
-vendor/bin/codex "Summarize this repository" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session-file=.codex-session.json
-vendor/bin/codex "Now answer in German" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session-file=.codex-session.json
+vendor/bin/ai-agent "Summarize this repository" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session-file=.ai-agent-session.json
+vendor/bin/ai-agent "Now answer in German" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session-file=.ai-agent-session.json
 ```
 
 Example with a prompt file:
 
 ```bash
-vendor/bin/codex prompts/review.txt --model=openai:gpt-5.4-mini --auth-file=./auth.json
+vendor/bin/ai-agent prompts/review.txt --model=openai:gpt-5.4-mini --auth-file=./auth.json
 ```
 
 Examples with supported providers:
 
 ```bash
-vendor/bin/codex "Summarize this repository" --model=openai:gpt-5.4-nano --key=your-openai-key
-vendor/bin/codex "Summarize this repository" --model=anthropic:claude-3-5-haiku-20241022 --key=your-anthropic-key
-vendor/bin/codex "Summarize this repository" --model=gemini:gemini-2.5-flash-lite --key=your-gemini-key
+vendor/bin/ai-agent "Summarize this repository" --model=openai:gpt-5.4-nano --key=your-openai-key
+vendor/bin/ai-agent "Summarize this repository" --model=anthropic:claude-3-5-haiku-20241022 --key=your-anthropic-key
+vendor/bin/ai-agent "Summarize this repository" --model=gemini:gemini-2.5-flash-lite --key=your-gemini-key
 ```
 
 ## auth.json Example

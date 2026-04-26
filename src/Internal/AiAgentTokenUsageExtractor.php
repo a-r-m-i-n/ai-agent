@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\CodexResponse;
-use Armin\CodexPhp\CodexTokenUsage;
-use Armin\CodexPhp\Internal\Session\CodexSession;
+use Armin\AiAgent\AiAgentResponse;
+use Armin\AiAgent\AiAgentTokenUsage;
+use Armin\AiAgent\Internal\Session\AgentSession;
 
-final class CodexTokenUsageExtractor
+final class AiAgentTokenUsageExtractor
 {
-    public function fromResponse(CodexResponse $response): CodexTokenUsage
+    public function fromResponse(AiAgentResponse $response): AiAgentTokenUsage
     {
         return $this->fromMetadata($response->metadata(), toolCalls: $response->toolCalls());
     }
 
-    public function fromSession(CodexSession $session): CodexTokenUsage
+    public function fromSession(AgentSession $session): AiAgentTokenUsage
     {
-        $usage = new CodexTokenUsage();
+        $usage = new AiAgentTokenUsage();
         $assistantMessagesSinceLastUser = 0;
 
         foreach ($session->messages() as $message) {
@@ -56,7 +56,7 @@ final class CodexTokenUsageExtractor
      * @param array<string, mixed> $metadata
      * @param list<array<string, mixed>> $toolCalls
      */
-    private function fromMetadata(array $metadata, bool $includeNestedAssistantMessages = true, array $toolCalls = []): CodexTokenUsage
+    private function fromMetadata(array $metadata, bool $includeNestedAssistantMessages = true, array $toolCalls = []): AiAgentTokenUsage
     {
         $usage = is_array($metadata['final_response'] ?? null) ? $metadata['final_response'] : [];
         $normalUsage = is_array($usage['usage'] ?? null) ? $usage['usage'] : [];
@@ -75,7 +75,7 @@ final class CodexTokenUsageExtractor
             $total = $input + $output;
         }
 
-        $aggregatedUsage = new CodexTokenUsage(
+        $aggregatedUsage = new AiAgentTokenUsage(
             input: $input,
             cachedInput: $cachedInput,
             output: $output,

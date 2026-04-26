@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tool;
+namespace Armin\AiAgent\Tool;
 
 interface ToolDescriptionInterface
 {

@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tool\Builtin;
+namespace Armin\AiAgent\Tool\Builtin;
 
-use Armin\CodexPhp\Exception\InvalidToolInput;
-use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
-use Armin\CodexPhp\Tool\ToolDescriptionInterface;
-use Armin\CodexPhp\Tool\ToolInterface;
-use Armin\CodexPhp\Tool\ToolResult;
+use Armin\AiAgent\Exception\InvalidToolInput;
+use Armin\AiAgent\Tool\SchemaAwareToolInterface;
+use Armin\AiAgent\Tool\ToolDescriptionInterface;
+use Armin\AiAgent\Tool\ToolInterface;
+use Armin\AiAgent\Tool\ToolResult;
 use Symfony\Component\Process\Process;
 
 final class ApplyPatchTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface, ToolDescriptionInterface
@@ -49,7 +49,7 @@ final class ApplyPatchTool extends AbstractTool implements ToolInterface, Schema
 
         [$stripLevel, $touchedFiles, $hunkCount] = $this->inspectPatch($patch);
         $snapshot = $this->snapshotFiles($workingDirectory, $touchedFiles);
-        $patchFile = tempnam(sys_get_temp_dir(), 'codex-patch-');
+        $patchFile = tempnam(sys_get_temp_dir(), 'ai-agent-patch-');
 
         if ($patchFile === false) {
             return ToolResult::failure([

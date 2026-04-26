@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
 use Symfony\AI\Platform\Message\Content\Image;
 

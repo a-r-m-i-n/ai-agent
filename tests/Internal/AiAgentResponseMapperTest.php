@@ -2,20 +2,20 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal;
+namespace Armin\AiAgent\Tests\Internal;
 
-use Armin\CodexPhp\Internal\CodexResponseMapper;
+use Armin\AiAgent\Internal\AiAgentResponseMapper;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Result\MultiPartResult;
 use Symfony\AI\Platform\Result\TextResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Result\ToolCallResult;
 
-final class CodexResponseMapperTest extends TestCase
+final class AiAgentResponseMapperTest extends TestCase
 {
     public function testMapCollectsTextAndToolCalls(): void
     {
-        $mapper = new CodexResponseMapper();
+        $mapper = new AiAgentResponseMapper();
         $result = new MultiPartResult([
             new TextResult('before '),
             new ToolCallResult([

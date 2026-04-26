@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\Exception\InvalidModel;
+use Armin\AiAgent\Exception\InvalidModel;
 
 final class ModelNameParser
 {

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-final class CodexSystemPrompt
+final class AiAgentSystemPrompt
 {
     public static function base(): string
     {

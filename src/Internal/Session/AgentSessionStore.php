@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal\Session;
+namespace Armin\AiAgent\Internal\Session;
 
-use Armin\CodexPhp\Exception\InvalidSession;
+use Armin\AiAgent\Exception\InvalidSession;
 
-final class CodexSessionStore
+final class AgentSessionStore
 {
     private const VERSION = 1;
 
@@ -25,10 +25,10 @@ final class CodexSessionStore
         return is_file($this->path);
     }
 
-    public function load(): CodexSession
+    public function load(): AgentSession
     {
         if (!$this->exists()) {
-            return new CodexSession();
+            return new AgentSession();
         }
 
         $json = @file_get_contents($this->path);
@@ -124,10 +124,10 @@ final class CodexSessionStore
             $normalizedMessages[] = $normalizedMessage;
         }
 
-        return new CodexSession($normalizedMessages);
+        return new AgentSession($normalizedMessages);
     }
 
-    public function save(CodexSession $session): void
+    public function save(AgentSession $session): void
     {
         $directory = dirname($this->path);
 

@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tool\Builtin;
+namespace Armin\AiAgent\Tool\Builtin;
 
-use Armin\CodexPhp\Internal\LocalImageAttachmentResolver;
-use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
-use Armin\CodexPhp\Tool\ToolDescriptionInterface;
-use Armin\CodexPhp\Tool\ToolInterface;
-use Armin\CodexPhp\Tool\ToolResult;
+use Armin\AiAgent\Internal\LocalImageAttachmentResolver;
+use Armin\AiAgent\Tool\SchemaAwareToolInterface;
+use Armin\AiAgent\Tool\ToolDescriptionInterface;
+use Armin\AiAgent\Tool\ToolInterface;
+use Armin\AiAgent\Tool\ToolResult;
 
 final class ViewImageTool extends AbstractTool implements ToolInterface, SchemaAwareToolInterface, ToolDescriptionInterface
 {

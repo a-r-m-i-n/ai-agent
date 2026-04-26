@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Auth;
+namespace Armin\AiAgent\Tests\Auth;
 
-use Armin\CodexPhp\Auth\CodexAuth;
-use Armin\CodexPhp\Exception\InvalidAuth;
+use Armin\AiAgent\Auth\AgentAuth;
+use Armin\AiAgent\Exception\InvalidAuth;
 use PHPUnit\Framework\TestCase;
 
-final class CodexAuthTest extends TestCase
+final class AgentAuthTest extends TestCase
 {
     public function testFromArrayAcceptsApiKeyWithoutTokens(): void
     {
-        $auth = CodexAuth::fromArray([
+        $auth = AgentAuth::fromArray([
             'auth_mode' => 'api_key',
             'api_key' => 'secret',
             'last_refresh' => '2026-04-08T13:44:58.467138412Z',
@@ -24,7 +24,7 @@ final class CodexAuthTest extends TestCase
 
     public function testFromArrayAcceptsTokensWithoutApiKey(): void
     {
-        $auth = CodexAuth::fromArray([
+        $auth = AgentAuth::fromArray([
             'auth_mode' => 'tokens',
             'api_key' => null,
             'tokens' => [
@@ -42,7 +42,7 @@ final class CodexAuthTest extends TestCase
 
     public function testFromArrayAcceptsChatGptModeWithoutApiKey(): void
     {
-        $auth = CodexAuth::fromArray([
+        $auth = AgentAuth::fromArray([
             'auth_mode' => 'chatgpt',
             'api_key' => null,
             'tokens' => [
@@ -63,7 +63,7 @@ final class CodexAuthTest extends TestCase
     {
         $this->expectException(InvalidAuth::class);
 
-        CodexAuth::fromArray([
+        AgentAuth::fromArray([
             'auth_mode' => 'token',
             'api_key' => null,
         ]);
@@ -73,7 +73,7 @@ final class CodexAuthTest extends TestCase
     {
         $this->expectException(InvalidAuth::class);
 
-        CodexAuth::fromArray([
+        AgentAuth::fromArray([
             'auth_mode' => 'api_key',
             'api_key' => null,
         ]);
@@ -81,7 +81,7 @@ final class CodexAuthTest extends TestCase
 
     public function testLoaderParsesAuthFile(): void
     {
-        $path = tempnam(sys_get_temp_dir(), 'codex-auth-');
+        $path = tempnam(sys_get_temp_dir(), 'ai-agent-auth-');
         self::assertNotFalse($path);
 
         file_put_contents($path, json_encode([
@@ -97,7 +97,7 @@ final class CodexAuthTest extends TestCase
         ], JSON_THROW_ON_ERROR));
 
         try {
-            $auth = CodexAuth::fromFile($path);
+            $auth = AgentAuth::fromFile($path);
             self::assertSame('def', $auth->credential());
             self::assertSame('2026-04-08T13:44:58.467138412Z', $auth->lastRefresh());
         } finally {

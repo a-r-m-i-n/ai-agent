@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal\Provider;
+namespace Armin\AiAgent\Tests\Internal\Provider;
 
-use Armin\CodexPhp\Internal\Provider\AnthropicTokenModelClient;
-use Armin\CodexPhp\Internal\Provider\GeminiTokenModelClient;
-use Armin\CodexPhp\Internal\Provider\OpenAiTokenModelClient;
+use Armin\AiAgent\Internal\Provider\AnthropicTokenModelClient;
+use Armin\AiAgent\Internal\Provider\GeminiTokenModelClient;
+use Armin\AiAgent\Internal\Provider\OpenAiTokenModelClient;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Anthropic\Claude;
 use Symfony\AI\Platform\Bridge\Gemini\Gemini;

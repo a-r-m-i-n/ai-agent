@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp;
+namespace Armin\AiAgent;
 
-final class CodexTokenUsage
+final class AiAgentTokenUsage
 {
     /**
      * @param array<string, int> $toolCallDetails

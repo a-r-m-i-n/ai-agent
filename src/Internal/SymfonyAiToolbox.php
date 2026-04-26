@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\Tool\ToolInterface;
-use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
-use Armin\CodexPhp\Tool\ToolRegistry;
+use Armin\AiAgent\Tool\ToolInterface;
+use Armin\AiAgent\Tool\SchemaAwareToolInterface;
+use Armin\AiAgent\Tool\ToolRegistry;
 use JsonException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolExecutionException;
 use Symfony\AI\Agent\Toolbox\Exception\ToolNotFoundException;

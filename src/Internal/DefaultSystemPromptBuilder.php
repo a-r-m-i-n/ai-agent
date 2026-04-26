@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\CodexConfig;
-use Armin\CodexPhp\Tool\ToolRegistry;
+use Armin\AiAgent\AiAgentConfig;
+use Armin\AiAgent\Tool\ToolRegistry;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Process\Process;
 
 final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
 {
     public function __construct(
-        private readonly CodexConfig $config,
+        private readonly AiAgentConfig $config,
         private readonly ToolRegistry $toolRegistry,
     ) {
     }
@@ -26,7 +26,7 @@ final class DefaultSystemPromptBuilder implements SystemPromptBuilderInterface
         }
 
         $sections = array_filter([
-            CodexSystemPrompt::base(),
+            AiAgentSystemPrompt::base(),
             $this->buildToolsSection(),
             $this->buildHostedToolsSection($context),
             $this->buildRepositoryContextSection(),

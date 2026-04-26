@@ -1,6 +1,6 @@
 {
-    "name": "armin/codex-php",
-    "description": "A small extensible Codex client for PHP.",
+    "name": "armin/ai-agent",
+    "description": "Generic AI code assistant client for PHP.",
     "type": "library",
     "version": "0.0.1-dev",
     "license": "MIT",
@@ -25,18 +25,18 @@
     },
     "autoload": {
         "psr-4": {
-            "Armin\\CodexPhp\\": "src/"
+            "Armin\\AiAgent\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Armin\\CodexPhp\\Tests\\": "tests/"
+            "Armin\\AiAgent\\Tests\\": "tests/"
         }
     },
     "scripts": {
         "test": "phpunit"
     },
     "bin": [
-        "bin/codex"
+        "bin/ai-agent"
     ]
 }

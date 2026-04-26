@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\Exception\InvalidToolInput;
+use Armin\AiAgent\Exception\InvalidToolInput;
 use Symfony\Component\Finder\Finder;
 
 final class LocalImageAttachmentResolver

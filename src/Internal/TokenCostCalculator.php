@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\CodexTokenUsage;
+use Armin\AiAgent\AiAgentTokenUsage;
 
 final class TokenCostCalculator
 {
-    public function estimate(CodexTokenUsage $usage, ?ModelMetadata $metadata): ?EstimatedTokenCost
+    public function estimate(AiAgentTokenUsage $usage, ?ModelMetadata $metadata): ?EstimatedTokenCost
     {
         if (!$metadata instanceof ModelMetadata) {
             return null;
@@ -30,7 +30,7 @@ final class TokenCostCalculator
         return new EstimatedTokenCost(($inputCost + $cachedInputCost + $outputCost) / 1_000_000);
     }
 
-    private function resolvePricing(ModelPricing $pricing, CodexTokenUsage $usage): ModelPricing
+    private function resolvePricing(ModelPricing $pricing, AiAgentTokenUsage $usage): ModelPricing
     {
         foreach ($pricing->tiers() as $tier) {
             $condition = $tier['condition'] ?? null;

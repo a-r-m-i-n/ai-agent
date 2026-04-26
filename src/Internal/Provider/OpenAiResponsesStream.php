@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal\Provider;
+namespace Armin\AiAgent\Internal\Provider;
 
 use Symfony\AI\Platform\Result\Stream\HttpStreamInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
-final class OpenAiCodexStream implements HttpStreamInterface
+final class OpenAiResponsesStream implements HttpStreamInterface
 {
     public function stream(ResponseInterface $response): iterable
     {

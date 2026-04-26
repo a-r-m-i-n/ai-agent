@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal;
+namespace Armin\AiAgent\Tests\Internal;
 
-use Armin\CodexPhp\Exception\InvalidModel;
-use Armin\CodexPhp\Internal\ModelNameParser;
+use Armin\AiAgent\Exception\InvalidModel;
+use Armin\AiAgent\Internal\ModelNameParser;
 use PHPUnit\Framework\TestCase;
 
 final class ModelNameParserTest extends TestCase

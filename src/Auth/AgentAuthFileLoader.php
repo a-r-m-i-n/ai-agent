@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Auth;
+namespace Armin\AiAgent\Auth;
 
-use Armin\CodexPhp\Exception\InvalidAuth;
+use Armin\AiAgent\Exception\InvalidAuth;
 use JsonException;
 
-final class CodexAuthFileLoader
+final class AgentAuthFileLoader
 {
-    public function load(string $path): CodexAuth
+    public function load(string $path): AgentAuth
     {
         $contents = @file_get_contents($path);
 
@@ -27,6 +27,6 @@ final class CodexAuthFileLoader
             throw InvalidAuth::invalidFileStructure();
         }
 
-        return CodexAuth::fromArray($data);
+        return AgentAuth::fromArray($data);
     }
 }

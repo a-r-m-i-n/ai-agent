@@ -2,49 +2,49 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests;
+namespace Armin\AiAgent\Tests;
 
-use Armin\CodexPhp\Auth\CodexAuth;
-use Armin\CodexPhp\Auth\CodexAuthTokens;
-use Armin\CodexPhp\CodexClient;
-use Armin\CodexPhp\CodexConfig;
-use Armin\CodexPhp\CodexResponse;
-use Armin\CodexPhp\CodexTokenUsage;
-use Armin\CodexPhp\Exception\InvalidToolInput;
-use Armin\CodexPhp\Exception\InvalidSession;
-use Armin\CodexPhp\Exception\ToolNotFound;
-use Armin\CodexPhp\Internal\CodexRuntimeInterface;
-use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
-use Armin\CodexPhp\Tool\SchemaAwareToolInterface;
-use Armin\CodexPhp\Tool\ToolInterface;
-use Armin\CodexPhp\Tool\ToolRegistry;
-use Armin\CodexPhp\Tool\ToolResult;
+use Armin\AiAgent\Auth\AgentAuth;
+use Armin\AiAgent\Auth\AgentAuthTokens;
+use Armin\AiAgent\AiAgentClient;
+use Armin\AiAgent\AiAgentConfig;
+use Armin\AiAgent\AiAgentResponse;
+use Armin\AiAgent\AiAgentTokenUsage;
+use Armin\AiAgent\Exception\InvalidToolInput;
+use Armin\AiAgent\Exception\InvalidSession;
+use Armin\AiAgent\Exception\ToolNotFound;
+use Armin\AiAgent\Internal\AiAgentRuntimeInterface;
+use Armin\AiAgent\Tool\Builtin\ViewImageTool;
+use Armin\AiAgent\Tool\SchemaAwareToolInterface;
+use Armin\AiAgent\Tool\ToolInterface;
+use Armin\AiAgent\Tool\ToolRegistry;
+use Armin\AiAgent\Tool\ToolResult;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
-final class CodexClientTest extends TestCase
+final class AiAgentClientTest extends TestCase
 {
     private string $tempDirectory;
 
     protected function setUp(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR);
-        putenv(CodexConfig::MODEL_ENV_VAR);
-        $this->tempDirectory = sys_get_temp_dir() . '/codex-php-tests-' . bin2hex(random_bytes(4));
+        putenv(AiAgentConfig::API_KEY_ENV_VAR);
+        putenv(AiAgentConfig::MODEL_ENV_VAR);
+        $this->tempDirectory = sys_get_temp_dir() . '/ai-agent-tests-' . bin2hex(random_bytes(4));
         mkdir($this->tempDirectory, 0777, true);
     }
 
     protected function tearDown(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR);
-        putenv(CodexConfig::MODEL_ENV_VAR);
+        putenv(AiAgentConfig::API_KEY_ENV_VAR);
+        putenv(AiAgentConfig::MODEL_ENV_VAR);
         $this->removeDirectory($this->tempDirectory);
     }
 
     public function testBuiltinsAreRegisteredByDefault(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
 
         self::assertTrue($client->hasTool('apply_patch'));
         self::assertTrue($client->hasTool('read_file'));
@@ -61,19 +61,19 @@ final class CodexClientTest extends TestCase
 
     public function testApiKeyIsReadFromEnvironment(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR . '=test-key');
+        putenv(AiAgentConfig::API_KEY_ENV_VAR . '=test-key');
 
-        $client = new CodexClient(new CodexConfig());
+        $client = new AiAgentClient(new AiAgentConfig());
 
         self::assertSame('test-key', $client->apiKey());
     }
 
     public function testApiKeyCanBeResolvedFromAuthObject(): void
     {
-        $client = new CodexClient(new CodexConfig(auth: new CodexAuth(
+        $client = new AiAgentClient(new AiAgentConfig(auth: new AgentAuth(
             authMode: 'tokens',
             apiKey: null,
-            tokens: new CodexAuthTokens('id', 'access', 'refresh', 'account'),
+            tokens: new AgentAuthTokens('id', 'access', 'refresh', 'account'),
         )));
 
         self::assertNull($client->apiKey());
@@ -82,8 +82,8 @@ final class CodexClientTest extends TestCase
 
     public function testMutableApiKeyOverrideTakesPrecedenceOverAuthObject(): void
     {
-        $config = new CodexConfig(auth: new CodexAuth(
-            authMode: CodexAuth::MODE_API_KEY,
+        $config = new AiAgentConfig(auth: new AgentAuth(
+            authMode: AgentAuth::MODE_API_KEY,
             apiKey: 'auth-key',
         ));
 
@@ -94,7 +94,7 @@ final class CodexClientTest extends TestCase
 
     public function testConfigExposesWorkingDirectoryAndSystemPromptSettings(): void
     {
-        $config = new CodexConfig(
+        $config = new AiAgentConfig(
             sessionFile: $this->tempDirectory . '/session.json',
             workingDirectory: $this->tempDirectory,
             systemPrompt: 'Answer tersely.',
@@ -109,7 +109,7 @@ final class CodexClientTest extends TestCase
 
     public function testBuiltinHostedToolFlagsDefaultToEnabled(): void
     {
-        $config = new CodexConfig();
+        $config = new AiAgentConfig();
 
         self::assertTrue($config->enableBuiltinWebSearch());
         self::assertTrue($config->enableBuiltinImageGeneration());
@@ -117,7 +117,7 @@ final class CodexClientTest extends TestCase
 
     public function testBuiltinHostedToolFlagsSupportConstructorAndSetterOverrides(): void
     {
-        $config = new CodexConfig(
+        $config = new AiAgentConfig(
             enableBuiltinWebSearch: false,
             enableBuiltinImageGeneration: false,
         );
@@ -136,21 +136,21 @@ final class CodexClientTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new CodexConfig(systemPromptMode: 'invalid');
+        new AiAgentConfig(systemPromptMode: 'invalid');
     }
 
     public function testMissingApiKeyReturnsNull(): void
     {
-        putenv(CodexConfig::API_KEY_ENV_VAR);
+        putenv(AiAgentConfig::API_KEY_ENV_VAR);
 
-        $client = new CodexClient(new CodexConfig());
+        $client = new AiAgentClient(new AiAgentConfig());
 
         self::assertNull($client->apiKey());
     }
 
     public function testReadFileAndApplyPatchToolsWork(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
         $path = $this->tempDirectory . '/example.txt';
         file_put_contents($path, "hello\n");
 
@@ -176,7 +176,7 @@ final class CodexClientTest extends TestCase
 
     public function testApplyPatchResolvesRelativePathsAgainstConfiguredWorkingDirectory(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
         mkdir($this->tempDirectory . '/nested', 0777, true);
         file_put_contents($this->tempDirectory . '/nested/example.txt', "hello\n");
 
@@ -198,7 +198,7 @@ final class CodexClientTest extends TestCase
 
     public function testReadFileSupportsLineRanges(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $path = $this->tempDirectory . '/lines.txt';
         file_put_contents($path, "one\ntwo\nthree\nfour\n");
 
@@ -218,7 +218,7 @@ final class CodexClientTest extends TestCase
 
     public function testReadFileSupportsTailLines(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $path = $this->tempDirectory . '/tail.txt';
         file_put_contents($path, "one\ntwo\nthree\nfour");
 
@@ -237,7 +237,7 @@ final class CodexClientTest extends TestCase
 
     public function testReadFileSupportsMaxLinesAndMarksTruncation(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $path = $this->tempDirectory . '/truncate.txt';
         file_put_contents($path, "one\ntwo\nthree\nfour");
 
@@ -256,7 +256,7 @@ final class CodexClientTest extends TestCase
 
     public function testReadFileReturnsFailureForMissingFile(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
 
         $result = $client->runTool('read_file', [
             'path' => $this->tempDirectory . '/missing.txt',
@@ -268,7 +268,7 @@ final class CodexClientTest extends TestCase
 
     public function testReadFileIgnoresTailLinesWhenLineRangeIsProvided(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $path = $this->tempDirectory . '/invalid-lines.txt';
         file_put_contents($path, "one\ntwo");
 
@@ -286,7 +286,7 @@ final class CodexClientTest extends TestCase
 
     public function testReadFileTreatsZeroTailLinesAsNotProvided(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $path = $this->tempDirectory . '/zero-tail.txt';
         file_put_contents($path, "one\ntwo");
 
@@ -303,7 +303,7 @@ final class CodexClientTest extends TestCase
 
     public function testReadFileReturnsFailureWhenStartLineIsOutsideFile(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $path = $this->tempDirectory . '/outside.txt';
         file_put_contents($path, "one\ntwo");
 
@@ -318,7 +318,7 @@ final class CodexClientTest extends TestCase
 
     public function testApplyPatchSupportsMultipleFiles(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
         file_put_contents($this->tempDirectory . '/first.txt', "one\n");
         file_put_contents($this->tempDirectory . '/second.txt', "two\n");
 
@@ -335,7 +335,7 @@ final class CodexClientTest extends TestCase
 
     public function testApplyPatchRollsBackWhenPatchIsInvalid(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
         file_put_contents($this->tempDirectory . '/broken.txt', "alpha\n");
 
         $result = $client->runTool('apply_patch', [
@@ -349,7 +349,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchListsFilesInDirectory(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $directory = $this->tempDirectory . '/files';
         mkdir($directory, 0777, true);
         file_put_contents($directory . '/a.php', '<?php');
@@ -372,7 +372,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchLimitsFileSearchByDepth(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $directory = $this->tempDirectory . '/depth-files';
         mkdir($directory . '/nested/deeper', 0777, true);
         file_put_contents($directory . '/root.txt', 'root');
@@ -407,7 +407,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchFindsContentMatchesWithFiltersAndLineNumbers(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
         mkdir($this->tempDirectory . '/nested', 0777, true);
         file_put_contents($this->tempDirectory . '/nested/a.php', "<?php\nneedle here\n");
         file_put_contents($this->tempDirectory . '/nested/b.txt', "needle elsewhere\n");
@@ -431,7 +431,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchLimitsContentMatchesByDepth(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
         mkdir($this->tempDirectory . '/depth-content/child/grandchild', 0777, true);
         file_put_contents($this->tempDirectory . '/depth-content/root.txt', "needle root\n");
         file_put_contents($this->tempDirectory . '/depth-content/child/match.txt', "needle child\n");
@@ -454,7 +454,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchCanIncludeFullContentsForFileMatches(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $directory = $this->tempDirectory . '/contents-full';
         mkdir($directory, 0777, true);
         file_put_contents($directory . '/example.txt', "one\ntwo\n");
@@ -471,7 +471,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchCanIncludeHeadContentsForFileMatches(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $directory = $this->tempDirectory . '/contents-head';
         mkdir($directory, 0777, true);
         file_put_contents($directory . '/example.txt', "one\ntwo\nthree\n");
@@ -488,7 +488,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchCanIncludeTailContentsForContentMatches(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $directory = $this->tempDirectory . '/contents-tail';
         mkdir($directory, 0777, true);
         file_put_contents($directory . '/example.txt', "one\ntwo\nneedle\nfour\n");
@@ -508,7 +508,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchTreatsEmptyQueryAsFileSearch(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $directory = $this->tempDirectory . '/empty-query-search';
         mkdir($directory, 0777, true);
         file_put_contents($directory . '/composer.json', "{\"name\":\"demo\"}\n");
@@ -529,7 +529,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchRespectsGitIgnoreRules(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
         file_put_contents($this->tempDirectory . '/.gitignore', "ignored.txt\nignored-dir/\n");
         file_put_contents($this->tempDirectory . '/visible.txt', 'needle');
         file_put_contents($this->tempDirectory . '/ignored.txt', 'needle');
@@ -548,7 +548,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchRespectsGitIgnoreRulesWhenDepthAndContentsAreUsed(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
         file_put_contents($this->tempDirectory . '/.gitignore', "ignored-dir/\n");
         mkdir($this->tempDirectory . '/visible', 0777, true);
         mkdir($this->tempDirectory . '/ignored-dir', 0777, true);
@@ -570,7 +570,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchIgnoresDirectoryPatternsWithoutTrailingSlash(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
         file_put_contents($this->tempDirectory . '/.gitignore', "/vendor\n");
         mkdir($this->tempDirectory . '/src', 0777, true);
         mkdir($this->tempDirectory . '/vendor/bin', 0777, true);
@@ -589,7 +589,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchReturnsFailureForMissingDirectory(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
 
         $result = $client->runTool('search', [
             'path' => $this->tempDirectory . '/missing',
@@ -602,7 +602,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchRejectsInvalidDepth(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
 
         $this->expectException(InvalidToolInput::class);
         $this->expectExceptionMessage('The "depth" input must be a non-negative integer when provided.');
@@ -615,7 +615,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchRejectsInvalidContentsMode(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
 
         $this->expectException(InvalidToolInput::class);
         $this->expectExceptionMessage('The "contents" input must be one of "full", "head:N", or "tail:N" when provided.');
@@ -628,7 +628,7 @@ final class CodexClientTest extends TestCase
 
     public function testViewImageReturnsCompactImageMetadata(): void
     {
-        $client = new CodexClient(registerBuiltins: false);
+        $client = new AiAgentClient(registerBuiltins: false);
         $client->registerTool(new ViewImageTool());
         $path = $this->tempDirectory . '/pixel.png';
         file_put_contents($path, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK9sAAAAASUVORK5CYII=', true));
@@ -649,7 +649,7 @@ final class CodexClientTest extends TestCase
 
     public function testViewImageResolvesRelativePathsAgainstConfiguredWorkingDirectory(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory), registerBuiltins: false);
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory), registerBuiltins: false);
         $client->registerTool(new ViewImageTool($this->tempDirectory));
         $path = $this->tempDirectory . '/images/pixel.png';
         mkdir(dirname($path), 0777, true);
@@ -663,7 +663,7 @@ final class CodexClientTest extends TestCase
 
     public function testViewImageResolvesRelativePathsAgainstCurrentWorkingDirectoryWhenNoConfigExists(): void
     {
-        $client = new CodexClient(registerBuiltins: false);
+        $client = new AiAgentClient(registerBuiltins: false);
         $client->registerTool(new ViewImageTool());
         $workingDirectory = $this->tempDirectory . '/cwd';
         mkdir($workingDirectory, 0777, true);
@@ -687,7 +687,7 @@ final class CodexClientTest extends TestCase
 
     public function testViewImageFailsForMissingFile(): void
     {
-        $client = new CodexClient(registerBuiltins: false);
+        $client = new AiAgentClient(registerBuiltins: false);
         $client->registerTool(new ViewImageTool());
 
         $this->expectException(InvalidToolInput::class);
@@ -702,7 +702,7 @@ final class CodexClientTest extends TestCase
             $this->markTestSkipped('No supported image extension available.');
         }
 
-        $client = new CodexClient(registerBuiltins: false);
+        $client = new AiAgentClient(registerBuiltins: false);
         $client->registerTool(new ViewImageTool());
         $path = $this->tempDirectory . '/large.png';
         $this->createLargePng($path, 4096, 1024);
@@ -717,7 +717,7 @@ final class CodexClientTest extends TestCase
 
     public function testShellReturnsOutput(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
 
         $result = $client->runTool('shell', [
             'command' => ['sh', '-c', 'printf "ok"'],
@@ -734,7 +734,7 @@ final class CodexClientTest extends TestCase
 
     public function testShellUsesConfiguredWorkingDirectoryByDefault(): void
     {
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory));
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory));
 
         $result = $client->runTool('shell', [
             'command' => ['pwd'],
@@ -747,7 +747,7 @@ final class CodexClientTest extends TestCase
 
     public function testShellSupportsConfigurableTimeout(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
 
         $result = $client->runTool('shell', [
             'command' => ['sh', '-c', 'sleep 1'],
@@ -763,7 +763,7 @@ final class CodexClientTest extends TestCase
 
     public function testShellRejectsInvalidTimeout(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
 
         $this->expectException(InvalidToolInput::class);
 
@@ -775,7 +775,7 @@ final class CodexClientTest extends TestCase
 
     public function testCustomToolCanBeRegistered(): void
     {
-        $client = new CodexClient(registerBuiltins: false);
+        $client = new AiAgentClient(registerBuiltins: false);
         $client->registerTool(new class implements ToolInterface {
             public function name(): string
             {
@@ -798,7 +798,7 @@ final class CodexClientTest extends TestCase
 
     public function testBuiltinToolCanBeUnregistered(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $client->unregisterTool('read_file');
 
         self::assertFalse($client->hasTool('read_file'));
@@ -806,7 +806,7 @@ final class CodexClientTest extends TestCase
 
     public function testBuiltinToolCanBeReplaced(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $client
             ->unregisterTool('read_file')
             ->registerTool(new class implements ToolInterface {
@@ -833,7 +833,7 @@ final class CodexClientTest extends TestCase
     public function testProvidedRegistryGetsBuiltinDefaultsThroughRegistryApi(): void
     {
         $registry = new ToolRegistry();
-        $client = new CodexClient(new CodexConfig(workingDirectory: $this->tempDirectory), $registry);
+        $client = new AiAgentClient(new AiAgentConfig(workingDirectory: $this->tempDirectory), $registry);
 
         self::assertTrue($client->hasTool('apply_patch'));
         self::assertTrue($client->hasTool('read_file'));
@@ -843,7 +843,7 @@ final class CodexClientTest extends TestCase
 
     public function testSearchToolSchemaPublishesDepthAndContentsParameters(): void
     {
-        $client = new CodexClient();
+        $client = new AiAgentClient();
         $tool = $client->tools()['search'];
 
         self::assertInstanceOf(SchemaAwareToolInterface::class, $tool);
@@ -857,10 +857,10 @@ final class CodexClientTest extends TestCase
 
     public function testRequestReturnsStructuredResponse(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse(
+                return new AiAgentResponse(
                     content: 'hello world',
                     model: 'openai:gpt-5',
                     toolCalls: [
@@ -876,7 +876,7 @@ final class CodexClientTest extends TestCase
             }
         };
 
-        $client = new CodexClient(runtime: $runtime);
+        $client = new AiAgentClient(runtime: $runtime);
         $response = $client->request('Say hello');
 
         self::assertSame('hello world', $response->content());
@@ -887,10 +887,10 @@ final class CodexClientTest extends TestCase
 
     public function testRequestTextReturnsOnlyContent(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse('plain answer', 'openai:gpt-5');
+                return new AiAgentResponse('plain answer', 'openai:gpt-5');
             }
 
             public function requestStructured(string $prompt, string $responseClass): object
@@ -899,21 +899,21 @@ final class CodexClientTest extends TestCase
             }
         };
 
-        $client = new CodexClient(runtime: $runtime);
+        $client = new AiAgentClient(runtime: $runtime);
 
         self::assertSame('plain answer', $client->requestText('Prompt'));
     }
 
     public function testRequestForwardsOptionalResponseClassToRuntime(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
+        $runtime = new class implements AiAgentRuntimeInterface {
             public ?string $capturedResponseClass = null;
 
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
                 $this->capturedResponseClass = $responseClass;
 
-                return new CodexResponse('{"ok":true}', 'openai:gpt-5');
+                return new AiAgentResponse('{"ok":true}', 'openai:gpt-5');
             }
 
             public function requestStructured(string $prompt, string $responseClass): object
@@ -922,7 +922,7 @@ final class CodexClientTest extends TestCase
             }
         };
 
-        $client = new CodexClient(runtime: $runtime);
+        $client = new AiAgentClient(runtime: $runtime);
         $client->request('Prompt', ClientStructuredResponse::class);
 
         self::assertSame(ClientStructuredResponse::class, $runtime->capturedResponseClass);
@@ -930,10 +930,10 @@ final class CodexClientTest extends TestCase
 
     public function testRequestTextReturnsJsonStringWhenResponseClassIsProvided(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse('{"message":"hello"}', 'openai:gpt-5');
+                return new AiAgentResponse('{"message":"hello"}', 'openai:gpt-5');
             }
 
             public function requestStructured(string $prompt, string $responseClass): object
@@ -942,15 +942,15 @@ final class CodexClientTest extends TestCase
             }
         };
 
-        $client = new CodexClient(runtime: $runtime);
+        $client = new AiAgentClient(runtime: $runtime);
 
         self::assertSame('{"message":"hello"}', $client->requestText('Prompt', ClientStructuredResponse::class));
     }
 
     public function testRequestStructuredReturnsDtoFromRuntime(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
                 throw new \BadMethodCallException('not used');
             }
@@ -961,7 +961,7 @@ final class CodexClientTest extends TestCase
             }
         };
 
-        $client = new CodexClient(runtime: $runtime);
+        $client = new AiAgentClient(runtime: $runtime);
         $response = $client->requestStructured('Prompt', ClientStructuredResponse::class);
 
         self::assertInstanceOf(ClientStructuredResponse::class, $response);
@@ -970,8 +970,8 @@ final class CodexClientTest extends TestCase
 
     public function testRequestStructuredRejectsInvalidResponseClass(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
                 throw new \BadMethodCallException('not used');
             }
@@ -986,7 +986,7 @@ final class CodexClientTest extends TestCase
             }
         };
 
-        $client = new CodexClient(runtime: $runtime);
+        $client = new AiAgentClient(runtime: $runtime);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('does not exist');
@@ -996,10 +996,10 @@ final class CodexClientTest extends TestCase
 
     public function testGetRequestTokensReturnsZeroUsageBeforeAnyRequest(): void
     {
-        $client = new CodexClient(runtime: new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $client = new AiAgentClient(runtime: new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse($prompt, 'openai:gpt-5');
+                return new AiAgentResponse($prompt, 'openai:gpt-5');
             }
 
             public function requestStructured(string $prompt, string $responseClass): object
@@ -1008,15 +1008,15 @@ final class CodexClientTest extends TestCase
             }
         });
 
-        self::assertSame((new CodexTokenUsage())->toArray(), $client->getRequestTokens()->toArray());
+        self::assertSame((new AiAgentTokenUsage())->toArray(), $client->getRequestTokens()->toArray());
     }
 
     public function testGetRequestTokensReturnsUsageFromLastRequest(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse(
+                return new AiAgentResponse(
                     content: 'hello world',
                     model: 'openai:gpt-5',
                     toolCalls: [
@@ -1043,7 +1043,7 @@ final class CodexClientTest extends TestCase
             }
         };
 
-        $client = new CodexClient(runtime: $runtime);
+        $client = new AiAgentClient(runtime: $runtime);
         $client->request('Say hello');
 
         self::assertSame([
@@ -1062,10 +1062,10 @@ final class CodexClientTest extends TestCase
 
     public function testGetRequestTokensAggregatesToolLoopAndGeneratedImageUsage(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+        $runtime = new class implements AiAgentRuntimeInterface {
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
-                return new CodexResponse(
+                return new AiAgentResponse(
                     content: 'final',
                     model: 'openai:gpt-5',
                     toolCalls: [
@@ -1118,7 +1118,7 @@ final class CodexClientTest extends TestCase
             }
         };
 
-        $client = new CodexClient(runtime: $runtime);
+        $client = new AiAgentClient(runtime: $runtime);
         $client->request('Generate something');
 
         self::assertSame([
@@ -1137,14 +1137,14 @@ final class CodexClientTest extends TestCase
 
     public function testGetRequestTokensTracksOnlyMostRecentRequest(): void
     {
-        $runtime = new class implements CodexRuntimeInterface {
+        $runtime = new class implements AiAgentRuntimeInterface {
             private int $calls = 0;
 
-            public function request(string $prompt, ?string $responseClass = null): CodexResponse
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
             {
                 ++$this->calls;
 
-                return new CodexResponse(
+                return new AiAgentResponse(
                     content: $prompt,
                     model: 'openai:gpt-5',
                     toolCalls: [
@@ -1168,7 +1168,7 @@ final class CodexClientTest extends TestCase
             }
         };
 
-        $client = new CodexClient(runtime: $runtime);
+        $client = new AiAgentClient(runtime: $runtime);
         $client->request('first');
         $client->request('second');
 
@@ -1188,11 +1188,11 @@ final class CodexClientTest extends TestCase
 
     public function testGetSessionTokensReturnsZeroWhenSessionFileIsNotConfiguredOrMissing(): void
     {
-        $withoutSession = new CodexClient();
-        $missingSession = new CodexClient(new CodexConfig(sessionFile: $this->tempDirectory . '/missing-session.json'));
+        $withoutSession = new AiAgentClient();
+        $missingSession = new AiAgentClient(new AiAgentConfig(sessionFile: $this->tempDirectory . '/missing-session.json'));
 
-        self::assertSame((new CodexTokenUsage())->toArray(), $withoutSession->getSessionTokens()->toArray());
-        self::assertSame((new CodexTokenUsage())->toArray(), $missingSession->getSessionTokens()->toArray());
+        self::assertSame((new AiAgentTokenUsage())->toArray(), $withoutSession->getSessionTokens()->toArray());
+        self::assertSame((new AiAgentTokenUsage())->toArray(), $missingSession->getSessionTokens()->toArray());
     }
 
     public function testGetSessionTokensAggregatesAssistantMessagesFromSessionFile(): void
@@ -1250,7 +1250,7 @@ final class CodexClientTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $client = new CodexClient(new CodexConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
 
         self::assertSame([
             'input' => 12,
@@ -1317,7 +1317,7 @@ final class CodexClientTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $client = new CodexClient(new CodexConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
 
         self::assertSame([
             'input' => 30,
@@ -1386,7 +1386,7 @@ final class CodexClientTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $client = new CodexClient(new CodexConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
 
         self::assertSame([
             'input' => 12,
@@ -1412,9 +1412,9 @@ final class CodexClientTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $client = new CodexClient(new CodexConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
 
-        self::assertSame((new CodexTokenUsage())->toArray(), $client->getSessionTokens()->toArray());
+        self::assertSame((new AiAgentTokenUsage())->toArray(), $client->getSessionTokens()->toArray());
     }
 
     public function testGetSessionTokensThrowsForInvalidSessionFile(): void
@@ -1422,7 +1422,7 @@ final class CodexClientTest extends TestCase
         $sessionFile = $this->tempDirectory . '/broken.json';
         file_put_contents($sessionFile, '{invalid');
 
-        $client = new CodexClient(new CodexConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
 
         $this->expectException(InvalidSession::class);
 
@@ -1431,7 +1431,7 @@ final class CodexClientTest extends TestCase
 
     public function testRequestUsesMutableConfigOverrides(): void
     {
-        $config = new CodexConfig();
+        $config = new AiAgentConfig();
         $config
             ->setModel('openai:gpt-5.1')
             ->setApiKey('secret')
@@ -1471,7 +1471,7 @@ event: response.created
 data: {"type":"response.created"}
 
 event: response.output_text.delta
-data: {"type":"response.output_text.delta","delta":"composer.json enthaelt den Namen armin/codex-php."}
+data: {"type":"response.output_text.delta","delta":"composer.json enthaelt den Namen armin/ai-agent."}
 
 event: response.completed
 data: {"type":"response.completed","response":{"id":"resp_2","output":[],"usage":{"input_tokens":20,"output_tokens":8,"total_tokens":28}}}
@@ -1479,12 +1479,12 @@ data: {"type":"response.completed","response":{"id":"resp_2","output":[],"usage"
 TEXT, ['http_code' => 200]);
         });
 
-        $client = new CodexClient(
-            new CodexConfig(
+        $client = new AiAgentClient(
+            new AiAgentConfig(
                 model: 'openai:gpt-5.4-mini',
-                auth: new CodexAuth(
-                    authMode: CodexAuth::MODE_TOKENS,
-                    tokens: new CodexAuthTokens('id', 'access', 'refresh', 'account'),
+                auth: new AgentAuth(
+                    authMode: AgentAuth::MODE_TOKENS,
+                    tokens: new AgentAuthTokens('id', 'access', 'refresh', 'account'),
                 ),
             ),
             registerBuiltins: false,
@@ -1512,7 +1512,7 @@ TEXT, ['http_code' => 200]);
             {
                 return ToolResult::success([
                     'path' => $input['path'] ?? null,
-                    'contents' => '{"name":"armin/codex-php"}',
+                    'contents' => '{"name":"armin/ai-agent"}',
                 ]);
             }
         });
@@ -1522,12 +1522,12 @@ TEXT, ['http_code' => 200]);
         self::assertCount(2, $requests);
         self::assertStringContainsString('"type":"function_call_output"', $requests[1]['body']);
         self::assertStringContainsString('"call_id":"call_123"', $requests[1]['body']);
-        self::assertSame('composer.json enthaelt den Namen armin/codex-php.', $response->content());
+        self::assertSame('composer.json enthaelt den Namen armin/ai-agent.', $response->content());
     }
 
     public function testUnknownToolThrows(): void
     {
-        $client = new CodexClient(registerBuiltins: false);
+        $client = new AiAgentClient(registerBuiltins: false);
 
         $this->expectException(ToolNotFound::class);
 

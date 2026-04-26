@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Auth;
+namespace Armin\AiAgent\Auth;
 
-final class CodexAuthTokens
+final class AgentAuthTokens
 {
     public function __construct(
         private readonly string $idToken,

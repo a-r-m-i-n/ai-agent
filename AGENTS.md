@@ -2,19 +2,19 @@
 
 ## Purpose
 
-This repository contains the `armin/codex-php` Composer package. It provides a small extensible Codex client for PHP with built-in tools for file IO and local command execution.
+This repository contains the `armin/ai-agent` Composer package. It provides a small extensible AI agent client for PHP with built-in tools for file IO and local command execution.
 
 ## Setup
 
 - PHP target: `^8.4`
-- Main package name: `armin/codex-php`
-- Default API key env var: `CODEX_API_KEY`
-- Default CLI model env var: `CODEX_DEFAULT_MODEL`
+- Main package name: `armin/ai-agent`
+- Default API key env var: `AI_AGENT_API_KEY`
+- Default CLI model env var: `AI_AGENT_DEFAULT_MODEL`
 - Run Composer commands only through DDEV, for example `ddev exec composer install`
 
 ## Main entry points
 
-- `src/CodexClient.php` is the public entry point
+- `src/AiAgentClient.php` is the public entry point
 - `src/Console/` contains the Composer binary command setup
 - `src/Tool/ToolInterface.php` defines custom tool integration
 - `src/Tool/Builtin/` contains built-in tools
@@ -38,5 +38,5 @@ This repository contains the `armin/codex-php` Composer package. It provides a s
 - Run `ddev exec composer test`
 - Use `ddev exec php` for all PHP commands without exception
 - Run `ddev exec php vendor/bin/phpunit` for the test suite
-- Run `ddev exec bin/codex "Prompt" --model=openai:gpt-5.4-mini --auth-file=./auth.json` to smoke-test the CLI with a real API request
+- Run `ddev exec bin/ai-agent "Prompt" --model=openai:gpt-5.4-mini --auth-file=./auth.json` to smoke-test the CLI with a real API request
 - The repository already contains an `auth.json` file that can be used for real API requests during local smoke tests

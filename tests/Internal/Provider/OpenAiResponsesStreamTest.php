@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal\Provider;
+namespace Armin\AiAgent\Tests\Internal\Provider;
 
-use Armin\CodexPhp\Internal\Provider\OpenAiCodexStream;
+use Armin\AiAgent\Internal\Provider\OpenAiResponsesStream;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
-final class OpenAiCodexStreamTest extends TestCase
+final class OpenAiResponsesStreamTest extends TestCase
 {
     public function testStreamParsesEventAndDataFramesWithoutEventStreamContentType(): void
     {
@@ -25,7 +25,7 @@ final class OpenAiCodexStreamTest extends TestCase
         ]);
 
         $response = $httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses');
-        $events = iterator_to_array((new OpenAiCodexStream())->stream($response));
+        $events = iterator_to_array((new OpenAiResponsesStream())->stream($response));
 
         self::assertCount(2, $events);
         self::assertSame('response.created', $events[0]['type']);

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal;
+namespace Armin\AiAgent\Tests\Internal;
 
-use Armin\CodexPhp\Internal\HostedImageGenerationPersister;
+use Armin\AiAgent\Internal\HostedImageGenerationPersister;
 use PHPUnit\Framework\TestCase;
 
 final class HostedImageGenerationPersisterTest extends TestCase
@@ -13,7 +13,7 @@ final class HostedImageGenerationPersisterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tempDirectory = sys_get_temp_dir() . '/codex-php-hosted-image-' . bin2hex(random_bytes(4));
+        $this->tempDirectory = sys_get_temp_dir() . '/ai-agent-hosted-image-' . bin2hex(random_bytes(4));
         mkdir($this->tempDirectory, 0777, true);
     }
 

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\Tool\ToolDescriptionInterface;
-use Armin\CodexPhp\Tool\ToolInterface;
+use Armin\AiAgent\Tool\ToolDescriptionInterface;
+use Armin\AiAgent\Tool\ToolInterface;
 
 final class ToolMetadata
 {

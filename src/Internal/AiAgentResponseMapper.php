@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\CodexResponse;
+use Armin\AiAgent\AiAgentResponse;
 use Symfony\AI\Platform\Result\ChoiceResult;
 use Symfony\AI\Platform\Result\MultiPartResult;
 use Symfony\AI\Platform\Result\ResultInterface;
@@ -14,9 +14,9 @@ use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\TextResult;
 use Symfony\AI\Platform\Result\ToolCallResult;
 
-final class CodexResponseMapper
+final class AiAgentResponseMapper
 {
-    public function map(string $model, ResultInterface $result): CodexResponse
+    public function map(string $model, ResultInterface $result): AiAgentResponse
     {
         $toolCalls = [];
         $content = '';
@@ -38,7 +38,7 @@ final class CodexResponseMapper
             }
         }
 
-        return new CodexResponse($content, $model, $toolCalls, $result->getMetadata()->all());
+        return new AiAgentResponse($content, $model, $toolCalls, $result->getMetadata()->all());
     }
 
     /**

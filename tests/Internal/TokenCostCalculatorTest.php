@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal;
+namespace Armin\AiAgent\Tests\Internal;
 
-use Armin\CodexPhp\CodexTokenUsage;
-use Armin\CodexPhp\Internal\ModelMetadataRegistry;
-use Armin\CodexPhp\Internal\TokenCostCalculator;
+use Armin\AiAgent\AiAgentTokenUsage;
+use Armin\AiAgent\Internal\ModelMetadataRegistry;
+use Armin\AiAgent\Internal\TokenCostCalculator;
 use PHPUnit\Framework\TestCase;
 
 final class TokenCostCalculatorTest extends TestCase
@@ -15,7 +15,7 @@ final class TokenCostCalculatorTest extends TestCase
     {
         $calculator = new TokenCostCalculator();
         $metadata = (new ModelMetadataRegistry())->find('openai:gpt-5.4');
-        $usage = new CodexTokenUsage(input: 10000, cachedInput: 4000, output: 2000);
+        $usage = new AiAgentTokenUsage(input: 10000, cachedInput: 4000, output: 2000);
 
         $cost = $calculator->estimate($usage, $metadata);
 
@@ -29,12 +29,12 @@ final class TokenCostCalculatorTest extends TestCase
         $metadata = (new ModelMetadataRegistry())->find('openai:gpt-5.4');
         self::assertNotNull($metadata);
 
-        $customMetadata = new \Armin\CodexPhp\Internal\ModelMetadata(
+        $customMetadata = new \Armin\AiAgent\Internal\ModelMetadata(
             provider: $metadata->provider(),
             model: $metadata->model(),
             contextWindow: $metadata->contextWindow(),
             maxOutputTokens: $metadata->maxOutputTokens(),
-            pricing: new \Armin\CodexPhp\Internal\ModelPricing(
+            pricing: new \Armin\AiAgent\Internal\ModelPricing(
                 inputPerMillionUsd: 2.5,
                 cachedInputPerMillionUsd: null,
                 outputPerMillionUsd: 15.0,
@@ -42,7 +42,7 @@ final class TokenCostCalculatorTest extends TestCase
             source: $metadata->source(),
         );
 
-        $cost = $calculator->estimate(new CodexTokenUsage(input: 1000, cachedInput: 300, output: 100), $customMetadata);
+        $cost = $calculator->estimate(new AiAgentTokenUsage(input: 1000, cachedInput: 300, output: 100), $customMetadata);
 
         self::assertNotNull($cost);
         self::assertSame('$0.0040', $cost->formatUsd());
@@ -53,7 +53,7 @@ final class TokenCostCalculatorTest extends TestCase
         $calculator = new TokenCostCalculator();
         $metadata = (new ModelMetadataRegistry())->find('gemini:gemini-2.5-flash-lite');
 
-        $cost = $calculator->estimate(new CodexTokenUsage(), $metadata);
+        $cost = $calculator->estimate(new AiAgentTokenUsage(), $metadata);
 
         self::assertNotNull($cost);
         self::assertSame('$0.0000', $cost->formatUsd());
@@ -63,7 +63,7 @@ final class TokenCostCalculatorTest extends TestCase
     {
         $calculator = new TokenCostCalculator();
         $metadata = (new ModelMetadataRegistry())->find('gemini:gemini-2.5-pro');
-        $usage = new CodexTokenUsage(input: 250000, cachedInput: 50000, output: 10000);
+        $usage = new AiAgentTokenUsage(input: 250000, cachedInput: 50000, output: 10000);
 
         $cost = $calculator->estimate($usage, $metadata);
 

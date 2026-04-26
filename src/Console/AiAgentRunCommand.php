@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Console;
+namespace Armin\AiAgent\Console;
 
-use Armin\CodexPhp\Auth\CodexAuthFileLoader;
-use Armin\CodexPhp\CodexClient;
-use Armin\CodexPhp\CodexConfig;
-use Armin\CodexPhp\CodexTokenUsage;
-use Armin\CodexPhp\Exception\MissingModel;
-use Armin\CodexPhp\Internal\AuthResolver;
-use Armin\CodexPhp\Internal\CodexTokenUsageExtractor;
-use Armin\CodexPhp\Internal\ContextUsageFormatter;
-use Armin\CodexPhp\Internal\DefaultSystemPromptBuilder;
-use Armin\CodexPhp\Internal\ModelMetadata;
-use Armin\CodexPhp\Internal\ModelMetadataRegistry;
-use Armin\CodexPhp\Internal\Session\CodexSessionStore;
-use Armin\CodexPhp\Internal\TokenCostCalculator;
-use Armin\CodexPhp\Tool\ToolRegistry;
+use Armin\AiAgent\Auth\AgentAuthFileLoader;
+use Armin\AiAgent\AiAgentClient;
+use Armin\AiAgent\AiAgentConfig;
+use Armin\AiAgent\AiAgentTokenUsage;
+use Armin\AiAgent\Exception\MissingModel;
+use Armin\AiAgent\Internal\AuthResolver;
+use Armin\AiAgent\Internal\AiAgentTokenUsageExtractor;
+use Armin\AiAgent\Internal\ContextUsageFormatter;
+use Armin\AiAgent\Internal\DefaultSystemPromptBuilder;
+use Armin\AiAgent\Internal\ModelMetadata;
+use Armin\AiAgent\Internal\ModelMetadataRegistry;
+use Armin\AiAgent\Internal\Session\AgentSessionStore;
+use Armin\AiAgent\Internal\TokenCostCalculator;
+use Armin\AiAgent\Tool\ToolRegistry;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -27,15 +27,15 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'codex')]
-final class CodexRunCommand extends Command
+#[AsCommand(name: 'ai-agent')]
+final class AiAgentRunCommand extends Command
 {
-    private readonly CodexConfig $config;
+    private readonly AiAgentConfig $config;
 
     public function __construct(
-        ?CodexConfig $config = null,
-        private readonly ?CodexClient $client = null,
-        private readonly CodexAuthFileLoader $authFileLoader = new CodexAuthFileLoader(),
+        ?AiAgentConfig $config = null,
+        private readonly ?AiAgentClient $client = null,
+        private readonly AgentAuthFileLoader $authFileLoader = new AgentAuthFileLoader(),
         private readonly AuthResolver $authResolver = new AuthResolver(),
         private readonly ModelMetadataRegistry $modelMetadataRegistry = new ModelMetadataRegistry(),
         private readonly ContextUsageFormatter $contextUsageFormatter = new ContextUsageFormatter(),
@@ -49,7 +49,7 @@ final class CodexRunCommand extends Command
     protected function configure(): void
     {
         $this
-            ->setDescription('Runs Codex in non-interactive mode.')
+            ->setDescription('Runs the AI agent in non-interactive mode.')
             ->addArgument('prompt', InputArgument::REQUIRED, 'The prompt to execute.')
             ->addOption('model', null, InputOption::VALUE_REQUIRED, 'The model to use.')
             ->addOption('key', null, InputOption::VALUE_REQUIRED, 'The API key to use.')
@@ -74,7 +74,7 @@ final class CodexRunCommand extends Command
 
         $config = $auth === null
             ? $this->config
-            : new CodexConfig(
+            : new AiAgentConfig(
                 apiKey: $this->config->apiKey(),
                 model: $this->config->model(),
                 auth: $auth,
@@ -138,7 +138,7 @@ final class CodexRunCommand extends Command
             $io->newLine();
         }
 
-        $client = $this->client ?? new CodexClient($effectiveConfig);
+        $client = $this->client ?? new AiAgentClient($effectiveConfig);
         $response = $client->request($prompt);
 
         if ($output->getVerbosity() >= OutputInterface::VERBOSITY_VERBOSE) {
@@ -172,7 +172,7 @@ final class CodexRunCommand extends Command
         return is_string($contents) ? $contents : $prompt;
     }
 
-    private function buildSystemPrompt(CodexConfig $config): string
+    private function buildSystemPrompt(AiAgentConfig $config): string
     {
         return (new DefaultSystemPromptBuilder(
             $config,
@@ -180,20 +180,20 @@ final class CodexRunCommand extends Command
         ))->build();
     }
 
-    private function createDefaultConfig(): CodexConfig
+    private function createDefaultConfig(): AiAgentConfig
     {
         $workingDirectory = getcwd();
 
         if (!is_string($workingDirectory) || $workingDirectory === '') {
-            return new CodexConfig();
+            return new AiAgentConfig();
         }
 
-        return new CodexConfig(
+        return new AiAgentConfig(
             workingDirectory: $workingDirectory,
         );
     }
 
-    private function withDefaultWorkingDirectory(CodexConfig $config): CodexConfig
+    private function withDefaultWorkingDirectory(AiAgentConfig $config): AiAgentConfig
     {
         if ($config->workingDirectory() !== null) {
             return $config;
@@ -205,7 +205,7 @@ final class CodexRunCommand extends Command
             return $config;
         }
 
-        return new CodexConfig(
+        return new AiAgentConfig(
             apiKey: $config->apiKey(),
             model: $config->model(),
             auth: $config->auth(),
@@ -223,7 +223,7 @@ final class CodexRunCommand extends Command
         }
     }
 
-    private function writeTokenDiagnostics(SymfonyStyle $io, CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): void
+    private function writeTokenDiagnostics(SymfonyStyle $io, AiAgentTokenUsage $requestUsage, AiAgentTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): void
     {
         $table = new Table($io);
         $table->setStyle('box');
@@ -240,7 +240,7 @@ final class CodexRunCommand extends Command
         $table->render();
     }
 
-    private function writeSessionDiagnostics(SymfonyStyle $io, CodexTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): void
+    private function writeSessionDiagnostics(SymfonyStyle $io, AiAgentTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): void
     {
         $table = new Table($io);
         $table->setStyle('box');
@@ -259,7 +259,7 @@ final class CodexRunCommand extends Command
     /**
      * @return list<array{string, string, string}>
      */
-    private function usageRows(CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): array
+    private function usageRows(AiAgentTokenUsage $requestUsage, AiAgentTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): array
     {
         $rows = [];
         $metrics = [
@@ -313,7 +313,7 @@ final class CodexRunCommand extends Command
         return $rows;
     }
 
-    private function formatToolCallDetails(CodexTokenUsage $usage): string
+    private function formatToolCallDetails(AiAgentTokenUsage $usage): string
     {
         $details = $usage->toolCallDetails();
 
@@ -334,10 +334,10 @@ final class CodexRunCommand extends Command
         return number_format($value, 0, ',', '.');
     }
 
-    private function isZeroUsage(CodexTokenUsage $requestUsage, CodexTokenUsage $sessionUsage): bool
+    private function isZeroUsage(AiAgentTokenUsage $requestUsage, AiAgentTokenUsage $sessionUsage): bool
     {
-        return $requestUsage->toArray() === (new CodexTokenUsage())->toArray()
-            && $sessionUsage->toArray() === (new CodexTokenUsage())->toArray();
+        return $requestUsage->toArray() === (new AiAgentTokenUsage())->toArray()
+            && $sessionUsage->toArray() === (new AiAgentTokenUsage())->toArray();
     }
 
     private function resolveDebugMode(mixed $debugOption): ?string
@@ -360,7 +360,7 @@ final class CodexRunCommand extends Command
     /**
      * @return list<array{string, string}>
      */
-    private function sessionUsageRows(CodexTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): array
+    private function sessionUsageRows(AiAgentTokenUsage $sessionUsage, ?ModelMetadata $modelMetadata): array
     {
         $rows = [];
         $metrics = [
@@ -398,25 +398,25 @@ final class CodexRunCommand extends Command
         }
 
         $sessionCost = $this->tokenCostCalculator->estimate($sessionUsage, $modelMetadata);
-        if ($sessionCost !== null && $sessionUsage->toArray() !== (new CodexTokenUsage())->toArray()) {
+        if ($sessionCost !== null && $sessionUsage->toArray() !== (new AiAgentTokenUsage())->toArray()) {
             $rows[] = ['estimated_cost', $sessionCost->formatUsd()];
         }
 
         return $rows;
     }
 
-    private function readSessionUsage(?string $sessionFile): CodexTokenUsage
+    private function readSessionUsage(?string $sessionFile): AiAgentTokenUsage
     {
         if ($sessionFile === null || $sessionFile === '') {
-            return new CodexTokenUsage();
+            return new AiAgentTokenUsage();
         }
 
-        $store = new CodexSessionStore($sessionFile);
+        $store = new AgentSessionStore($sessionFile);
         if (!$store->exists()) {
-            return new CodexTokenUsage();
+            return new AiAgentTokenUsage();
         }
 
-        return (new CodexTokenUsageExtractor())->fromSession($store->load());
+        return (new AiAgentTokenUsageExtractor())->fromSession($store->load());
     }
 
     /**
@@ -527,13 +527,13 @@ final class CodexRunCommand extends Command
         return $step;
     }
 
-    private function loadRequiredSessionStore(?string $sessionFile): CodexSessionStore
+    private function loadRequiredSessionStore(?string $sessionFile): AgentSessionStore
     {
         if ($sessionFile === null || $sessionFile === '') {
             throw new \InvalidArgumentException('Debug mode "history" requires --session-file.');
         }
 
-        $store = new CodexSessionStore($sessionFile);
+        $store = new AgentSessionStore($sessionFile);
         if (!$store->exists()) {
             throw new \InvalidArgumentException(sprintf(
                 'Debug mode "history" requires an existing session file. File not found: %s',

@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp;
+namespace Armin\AiAgent;
 
-use Armin\CodexPhp\Auth\CodexAuth;
+use Armin\AiAgent\Auth\AgentAuth;
 
-final class CodexConfig
+final class AiAgentConfig
 {
-    public const API_KEY_ENV_VAR = 'CODEX_API_KEY';
-    public const MODEL_ENV_VAR = 'CODEX_DEFAULT_MODEL';
+    public const API_KEY_ENV_VAR = 'AI_AGENT_API_KEY';
+    public const MODEL_ENV_VAR = 'AI_AGENT_DEFAULT_MODEL';
 
     public function __construct(
         private ?string $apiKey = null,
         private ?string $model = null,
-        private ?CodexAuth $auth = null,
+        private ?AgentAuth $auth = null,
         private ?string $sessionFile = null,
         private readonly ?string $workingDirectory = null,
         private readonly ?string $systemPrompt = null,
@@ -27,7 +27,7 @@ final class CodexConfig
         }
     }
 
-    public function auth(): ?CodexAuth
+    public function auth(): ?AgentAuth
     {
         return $this->auth;
     }
@@ -38,7 +38,7 @@ final class CodexConfig
             return $this->apiKey;
         }
 
-        if ($this->auth instanceof CodexAuth && $this->auth->authMode() === CodexAuth::MODE_API_KEY) {
+        if ($this->auth instanceof AgentAuth && $this->auth->authMode() === AgentAuth::MODE_API_KEY) {
             return $this->auth->credential();
         }
 
@@ -90,7 +90,7 @@ final class CodexConfig
         return $this;
     }
 
-    public function setAuth(?CodexAuth $auth): self
+    public function setAuth(?AgentAuth $auth): self
     {
         $this->auth = $auth;
 

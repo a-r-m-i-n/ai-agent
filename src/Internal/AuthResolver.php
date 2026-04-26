@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Internal;
+namespace Armin\AiAgent\Internal;
 
-use Armin\CodexPhp\Auth\CodexAuth;
-use Armin\CodexPhp\CodexConfig;
-use Armin\CodexPhp\Exception\MissingApiKey;
+use Armin\AiAgent\Auth\AgentAuth;
+use Armin\AiAgent\AiAgentConfig;
+use Armin\AiAgent\Exception\MissingApiKey;
 
 final class AuthResolver
 {
-    public function resolve(CodexConfig $config): ResolvedAuth
+    public function resolve(AiAgentConfig $config): ResolvedAuth
     {
         $apiKey = $config->apiKey();
         if ($apiKey !== null) {
@@ -18,10 +18,10 @@ final class AuthResolver
         }
 
         $auth = $config->auth();
-        if ($auth instanceof CodexAuth) {
+        if ($auth instanceof AgentAuth) {
             return match ($auth->authMode()) {
-                CodexAuth::MODE_API_KEY => new ResolvedAuth('api_key', apiKey: $auth->apiKey()),
-                CodexAuth::MODE_TOKENS, CodexAuth::MODE_CHATGPT => new ResolvedAuth(
+                AgentAuth::MODE_API_KEY => new ResolvedAuth('api_key', apiKey: $auth->apiKey()),
+                AgentAuth::MODE_TOKENS, AgentAuth::MODE_CHATGPT => new ResolvedAuth(
                     'tokens',
                     accessToken: $auth->tokens()?->accessToken(),
                     accountId: $auth->tokens()?->accountId(),

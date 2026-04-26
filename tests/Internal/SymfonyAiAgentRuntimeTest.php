@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Armin\CodexPhp\Tests\Internal;
+namespace Armin\AiAgent\Tests\Internal;
 
-use Armin\CodexPhp\Auth\CodexAuth;
-use Armin\CodexPhp\CodexConfig;
-use Armin\CodexPhp\Exception\InvalidSession;
-use Armin\CodexPhp\Exception\ModelDoesNotSupportImageInput;
-use Armin\CodexPhp\Internal\SymfonyAiCodexRuntime;
-use Armin\CodexPhp\Tool\Builtin\ViewImageTool;
-use Armin\CodexPhp\Tool\ToolInterface;
-use Armin\CodexPhp\Tool\ToolRegistry;
-use Armin\CodexPhp\Tool\ToolResult;
+use Armin\AiAgent\Auth\AgentAuth;
+use Armin\AiAgent\AiAgentConfig;
+use Armin\AiAgent\Exception\InvalidSession;
+use Armin\AiAgent\Exception\ModelDoesNotSupportImageInput;
+use Armin\AiAgent\Internal\SymfonyAiAgentRuntime;
+use Armin\AiAgent\Tool\Builtin\ViewImageTool;
+use Armin\AiAgent\Tool\ToolInterface;
+use Armin\AiAgent\Tool\ToolRegistry;
+use Armin\AiAgent\Tool\ToolResult;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Capability;
 use Symfony\AI\Platform\Message\Content\Image;
@@ -30,13 +30,13 @@ use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\Result\ToolCallResult;
 use Symfony\AI\Platform\ResultConverterInterface;
 
-final class SymfonyAiCodexRuntimeTest extends TestCase
+final class SymfonyAiAgentRuntimeTest extends TestCase
 {
     private string $tempDirectory;
 
     protected function setUp(): void
     {
-        $this->tempDirectory = sys_get_temp_dir() . '/codex-php-runtime-' . bin2hex(random_bytes(4));
+        $this->tempDirectory = sys_get_temp_dir() . '/ai-agent-runtime-' . bin2hex(random_bytes(4));
         mkdir($this->tempDirectory, 0777, true);
     }
 
@@ -226,7 +226,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         self::assertSame('generated-binary', file_get_contents($this->tempDirectory . '/cat.jpg'));
     }
 
-    public function testStructuredRequestStillReturnsJsonTextInCodexResponse(): void
+    public function testStructuredRequestStillReturnsJsonTextInAiAgentResponse(): void
     {
         $holder = (object) ['inputs' => [], 'options' => []];
         $runtime = $this->createRuntime(
@@ -966,7 +966,7 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
         ?ToolRegistry $toolRegistry = null,
         string $model = 'openai:gpt-5.4-mini',
         array $configOverrides = [],
-    ): SymfonyAiCodexRuntime {
+    ): SymfonyAiAgentRuntime {
         $platform = new class($capabilities, $holder, $metadata, $results) implements PlatformInterface {
             /**
              * @param list<string> $capabilities
@@ -1058,10 +1058,10 @@ final class SymfonyAiCodexRuntimeTest extends TestCase
 
         $holder->options ??= [];
 
-        return new SymfonyAiCodexRuntime(
-            new CodexConfig(
+        return new SymfonyAiAgentRuntime(
+            new AiAgentConfig(
                 model: $model,
-                auth: new CodexAuth(authMode: CodexAuth::MODE_API_KEY, apiKey: 'test-key'),
+                auth: new AgentAuth(authMode: AgentAuth::MODE_API_KEY, apiKey: 'test-key'),
                 sessionFile: $sessionFile,
                 workingDirectory: $workingDirectory === false ? $this->tempDirectory : $workingDirectory,
                 enableBuiltinWebSearch: $configOverrides['enableBuiltinWebSearch'] ?? true,
