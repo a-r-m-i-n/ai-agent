@@ -47,7 +47,9 @@ final class DefaultSystemPromptBuilderTest extends TestCase
 
         $prompt = $builder->build();
 
-        self::assertStringContainsString('You are Codex, a pragmatic coding assistant.', $prompt);
+        self::assertStringContainsString('You are an **AI Code Assistant**, a pragmatic coding agent focused on real work inside the user\'s current environment.', $prompt);
+        self::assertStringContainsString('# Working Style', $prompt);
+        self::assertStringNotContainsString('You are Codex, a pragmatic coding assistant.', $prompt);
         self::assertStringNotContainsString('Available tools:', $prompt);
         self::assertStringNotContainsString('Repository context:', $prompt);
         self::assertStringNotContainsString('Repository instructions:', $prompt);
@@ -116,7 +118,7 @@ final class DefaultSystemPromptBuilderTest extends TestCase
 
         $prompt = $builder->build();
 
-        self::assertStringContainsString('You are Codex, a pragmatic coding assistant.', $prompt);
+        self::assertStringContainsString('You are an **AI Code Assistant**, a pragmatic coding agent focused on real work inside the user\'s current environment.', $prompt);
         self::assertStringContainsString('Always answer in JSON.', $prompt);
     }
 
