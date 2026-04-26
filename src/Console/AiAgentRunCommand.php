@@ -286,7 +286,7 @@ final class AiAgentRunCommand extends Command
                 $rows[] = [
                     '<fg=yellow;options=bold>total</>',
                     sprintf('<fg=yellow;options=bold>%s</>', $this->contextUsageFormatter->format($requestValue, $modelMetadata)),
-                    sprintf('<fg=yellow;options=bold>%s</>', $this->contextUsageFormatter->format($sessionValue, $modelMetadata)),
+                    sprintf('<fg=yellow;options=bold>%s</>', $this->formatNumber($sessionValue)),
                 ];
 
                 continue;
@@ -386,7 +386,7 @@ final class AiAgentRunCommand extends Command
             if ($label === 'total') {
                 $rows[] = [
                     '<fg=yellow;options=bold>total</>',
-                    sprintf('<fg=yellow;options=bold>%s</>', $this->contextUsageFormatter->format($sessionValue, $modelMetadata)),
+                    sprintf('<fg=yellow;options=bold>%s</>', $this->formatNumber($sessionValue)),
                 ];
 
                 continue;

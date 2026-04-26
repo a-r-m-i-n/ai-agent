@@ -20,6 +20,8 @@ final class ModelMetadataRegistryTest extends TestCase
         self::assertSame(2.5, $metadata->pricing()->inputPerMillionUsd());
         self::assertSame(0.25, $metadata->pricing()->cachedInputPerMillionUsd());
         self::assertSame(15.0, $metadata->pricing()->outputPerMillionUsd());
+        self::assertSame(10.0, $metadata->pricing()->imageInputPerMillionUsd());
+        self::assertSame(40.0, $metadata->pricing()->imageOutputPerMillionUsd());
     }
 
     public function testUnknownModelReturnsNull(): void

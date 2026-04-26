@@ -13,6 +13,8 @@ final class ModelPricing
         private readonly float $inputPerMillionUsd,
         private readonly ?float $cachedInputPerMillionUsd,
         private readonly float $outputPerMillionUsd,
+        private readonly ?float $imageInputPerMillionUsd = null,
+        private readonly ?float $imageOutputPerMillionUsd = null,
         private readonly ?string $notes = null,
         private readonly array $tiers = [],
     ) {
@@ -31,6 +33,16 @@ final class ModelPricing
     public function outputPerMillionUsd(): float
     {
         return $this->outputPerMillionUsd;
+    }
+
+    public function imageInputPerMillionUsd(): ?float
+    {
+        return $this->imageInputPerMillionUsd;
+    }
+
+    public function imageOutputPerMillionUsd(): ?float
+    {
+        return $this->imageOutputPerMillionUsd;
     }
 
     public function notes(): ?string

@@ -161,12 +161,15 @@ final class AiAgentRunCommandTest extends TestCase
         self::assertStringContainsString('read_file:1', $display);
         self::assertStringContainsString('1.234', $display);
         self::assertStringContainsString('12.444 (1,2%)', $display);
+        self::assertStringContainsString('1.235', $display);
+        self::assertStringNotContainsString('1.235 (', $display);
         self::assertStringContainsString('$0.1081', $display);
         self::assertStringContainsString("\e[", $rawDisplay);
         self::assertStringContainsString("\e[90mSay hello\e[39m", $rawDisplay);
         self::assertStringNotContainsString("\e[90mread_file:1", $rawDisplay);
         self::assertStringContainsString('total', $display);
         self::assertMatchesRegularExpression('/\x1b\[[0-9;]*33;1m12\.444 \(1,2%\)\x1b\[[0-9;]*m/', $rawDisplay);
+        self::assertStringNotContainsString('1.235 (', $rawDisplay);
     }
 
     public function testVeryVerboseExecutionAlsoPrintsSystemPrompt(): void
@@ -299,6 +302,7 @@ final class AiAgentRunCommandTest extends TestCase
         self::assertStringContainsString('Session', $display);
         self::assertStringNotContainsString('Request', $display);
         self::assertStringContainsString('3.300', $display);
+        self::assertStringNotContainsString('3.300 (', $display);
         self::assertStringContainsString('read_file:1, search:1', $display);
         self::assertStringNotContainsString('Hello from AI agent', $display);
     }

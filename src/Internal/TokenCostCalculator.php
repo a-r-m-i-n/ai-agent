@@ -20,6 +20,8 @@ final class TokenCostCalculator
 
         $inputCost = $uncachedInput * $pricing->inputPerMillionUsd();
         $outputCost = $usage->output() * $pricing->outputPerMillionUsd();
+        $imageInputCost = 0.0;
+        $imageOutputCost = 0.0;
         $cachedInputCost = 0.0;
 
         if ($cachedInput > 0) {
@@ -27,7 +29,15 @@ final class TokenCostCalculator
             $cachedInputCost = $cachedInput * $cachedPrice;
         }
 
-        return new EstimatedTokenCost(($inputCost + $cachedInputCost + $outputCost) / 1_000_000);
+        if ($pricing->imageInputPerMillionUsd() !== null) {
+            $imageInputCost = $usage->imageGenerationInput() * $pricing->imageInputPerMillionUsd();
+        }
+
+        if ($pricing->imageOutputPerMillionUsd() !== null) {
+            $imageOutputCost = $usage->imageGenerationOutput() * $pricing->imageOutputPerMillionUsd();
+        }
+
+        return new EstimatedTokenCost(($inputCost + $cachedInputCost + $outputCost + $imageInputCost + $imageOutputCost) / 1_000_000);
     }
 
     private function resolvePricing(ModelPricing $pricing, AiAgentTokenUsage $usage): ModelPricing
@@ -53,6 +63,12 @@ final class TokenCostCalculator
                 outputPerMillionUsd: is_numeric($tier['output_per_million_usd'] ?? null)
                     ? (float) $tier['output_per_million_usd']
                     : $pricing->outputPerMillionUsd(),
+                imageInputPerMillionUsd: is_numeric($tier['image_input_per_million_usd'] ?? null)
+                    ? (float) $tier['image_input_per_million_usd']
+                    : $pricing->imageInputPerMillionUsd(),
+                imageOutputPerMillionUsd: is_numeric($tier['image_output_per_million_usd'] ?? null)
+                    ? (float) $tier['image_output_per_million_usd']
+                    : $pricing->imageOutputPerMillionUsd(),
                 notes: $pricing->notes(),
                 tiers: $pricing->tiers(),
             );

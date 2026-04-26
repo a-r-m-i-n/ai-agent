@@ -86,6 +86,12 @@ final class ModelMetadataRegistry
                         ? (float) $pricing['cached_input_per_million_usd']
                         : null,
                     outputPerMillionUsd: (float) $pricing['output_per_million_usd'],
+                    imageInputPerMillionUsd: is_numeric($pricing['image_input_per_million_usd'] ?? null)
+                        ? (float) $pricing['image_input_per_million_usd']
+                        : null,
+                    imageOutputPerMillionUsd: is_numeric($pricing['image_output_per_million_usd'] ?? null)
+                        ? (float) $pricing['image_output_per_million_usd']
+                        : null,
                     notes: is_string($pricing['notes'] ?? null) ? $pricing['notes'] : null,
                     tiers: is_array($pricing['tiers'] ?? null) ? array_values(array_filter($pricing['tiers'], 'is_array')) : [],
                 ),

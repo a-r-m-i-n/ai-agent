@@ -70,4 +70,22 @@ final class TokenCostCalculatorTest extends TestCase
         self::assertNotNull($cost);
         self::assertSame('$1.1925', $cost->formatUsd());
     }
+
+    public function testEstimateIncludesOpenAiImageGenerationUsage(): void
+    {
+        $calculator = new TokenCostCalculator();
+        $metadata = (new ModelMetadataRegistry())->find('openai:gpt-5.4');
+        $usage = new AiAgentTokenUsage(
+            input: 10000,
+            cachedInput: 4000,
+            output: 2000,
+            imageGenerationInput: 100,
+            imageGenerationOutput: 50,
+        );
+
+        $cost = $calculator->estimate($usage, $metadata);
+
+        self::assertNotNull($cost);
+        self::assertSame('$0.0490', $cost->formatUsd());
+    }
 }
