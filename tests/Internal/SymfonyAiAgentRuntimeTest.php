@@ -438,7 +438,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
         );
 
         $response = $runtime->request('Current prompt');
@@ -452,6 +452,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertInstanceOf(ToolCallMessage::class, $messages[3]);
         self::assertSame('Current prompt', $messages[4]->asText());
         self::assertSame($sessionFile, $response->metadata()['session']['file']);
+        self::assertSame('file', $response->metadata()['session']['mode']);
         self::assertSame(3, $response->metadata()['session']['loaded_messages']);
         self::assertSame(3, $response->metadata()['session']['replayed_messages']);
         self::assertSame(5, $response->metadata()['session']['stored_messages']);
@@ -464,7 +465,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
             metadata: ['provider' => 'test', 'final_response' => ['id' => 'resp_1']],
         );
 
@@ -481,6 +482,35 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertSame('assistant', $payload['messages'][1]['role']);
         self::assertSame('ok', $payload['messages'][1]['content']);
         self::assertArrayNotHasKey('metadata', $payload['messages'][1]);
+    }
+
+    public function testInlineSessionIsUpdatedInResponseMetadataWithoutWritingAFile(): void
+    {
+        $inlineSession = json_encode([
+            'version' => 1,
+            'messages' => [
+                ['role' => 'user', 'content' => 'Earlier user question'],
+                ['role' => 'assistant', 'content' => 'Earlier assistant answer'],
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $holder = (object) ['inputs' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            session: $inlineSession,
+        );
+
+        $response = $runtime->request('Current prompt');
+
+        self::assertSame('inline', $response->metadata()['session']['mode']);
+        self::assertArrayNotHasKey('file', $response->metadata()['session']);
+        self::assertIsString($response->metadata()['session']['content']);
+
+        $payload = json_decode($response->metadata()['session']['content'], true, 512, JSON_THROW_ON_ERROR);
+        self::assertCount(4, $payload['messages']);
+        self::assertSame('Current prompt', $payload['messages'][2]['content']);
+        self::assertSame('ok', $payload['messages'][3]['content']);
     }
 
     public function testSessionMetadataIsArchivedButNotUsedForReplay(): void
@@ -508,7 +538,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
         );
 
         $runtime->request('Current prompt');
@@ -545,7 +575,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
         );
 
         $runtime->request('Current prompt');
@@ -613,7 +643,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_STRUCTURED],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
             results: [
                 new ToolCallResult([new ToolCall('call-1', 'find_files', ['path' => '/tmp', 'filter' => '*.json'])]),
                 new TextResult('{"message":"done","count":1}'),
@@ -778,7 +808,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
             metadata: [
                 'provider' => 'test',
                 'final_response' => [
@@ -818,7 +848,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
             metadata: [
                 'provider' => 'test',
                 'final_response' => [
@@ -872,7 +902,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
             results: [
                 new ToolCallResult([new ToolCall('call-1', 'view_image', ['path' => 'image.png'])]),
                 new TextResult('final'),
@@ -909,7 +939,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
             results: [
                 new ToolCallResult([new ToolCall('call-1', 'view_image', ['path' => 'image.png'])]),
             ],
@@ -984,7 +1014,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime = $this->createRuntime(
             [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
             $holder,
-            sessionFile: $sessionFile,
+            session: $sessionFile,
         );
 
         $this->expectException(InvalidSession::class);
@@ -1002,7 +1032,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         array $capabilities,
         object $holder,
         string|false|null $workingDirectory = false,
-        ?string $sessionFile = null,
+        ?string $session = null,
         array $metadata = ['provider' => 'test'],
         array $results = [],
         ?ToolRegistry $toolRegistry = null,
@@ -1104,7 +1134,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
             new AiAgentConfig(
                 model: $model,
                 auth: new AgentAuth(authMode: AgentAuth::MODE_API_KEY, apiKey: 'test-key'),
-                sessionFile: $sessionFile,
+                session: $session,
                 workingDirectory: $workingDirectory === false ? $this->tempDirectory : $workingDirectory,
                 enableBuiltinWebSearch: $configOverrides['enableBuiltinWebSearch'] ?? true,
                 enableBuiltinImageGeneration: $configOverrides['enableBuiltinImageGeneration'] ?? true,

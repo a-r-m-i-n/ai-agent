@@ -37,10 +37,38 @@ final class AgentSessionStore
             throw InvalidSession::unreadableFile($this->path);
         }
 
+        return self::loadFromJson($json, $this->path);
+    }
+
+    public function save(AgentSession $session): void
+    {
+        $directory = dirname($this->path);
+
+        if (!is_dir($directory) && !@mkdir($directory, 0777, true) && !is_dir($directory)) {
+            throw InvalidSession::unwritableFile($this->path);
+        }
+
+        $json = $this->toJson($session);
+
+        if (@file_put_contents($this->path, $json . PHP_EOL) === false) {
+            throw InvalidSession::unwritableFile($this->path);
+        }
+    }
+
+    public function toJson(AgentSession $session): string
+    {
+        return json_encode([
+            'version' => self::VERSION,
+            'messages' => $this->sanitizeMessagesForPersistence($session->messages()),
+        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
+    }
+
+    public static function loadFromJson(string $json, string $pathLabel = '[inline session]'): AgentSession
+    {
         try {
             $payload = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
-            throw InvalidSession::invalidJson($this->path);
+            throw InvalidSession::invalidJson($pathLabel);
         }
 
         if (!is_array($payload)) {
@@ -61,6 +89,7 @@ final class AgentSessionStore
             throw InvalidSession::invalidFileStructure('Field "messages" must be an array.');
         }
 
+        $store = new self($pathLabel);
         $normalizedMessages = [];
 
         foreach ($messages as $index => $message) {
@@ -92,7 +121,7 @@ final class AgentSessionStore
                     throw InvalidSession::invalidFileStructure(sprintf('Field "tool_calls" at index %d must be an array.', $index));
                 }
 
-                $normalizedMessage['tool_calls'] = $this->normalizeToolCalls($message['tool_calls'], $index);
+                $normalizedMessage['tool_calls'] = $store->normalizeToolCalls($message['tool_calls'], $index);
             }
 
             if (array_key_exists('tool_call_id', $message)) {
@@ -125,24 +154,6 @@ final class AgentSessionStore
         }
 
         return new AgentSession($normalizedMessages);
-    }
-
-    public function save(AgentSession $session): void
-    {
-        $directory = dirname($this->path);
-
-        if (!is_dir($directory) && !@mkdir($directory, 0777, true) && !is_dir($directory)) {
-            throw InvalidSession::unwritableFile($this->path);
-        }
-
-        $json = json_encode([
-            'version' => self::VERSION,
-            'messages' => $this->sanitizeMessagesForPersistence($session->messages()),
-        ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR);
-
-        if (@file_put_contents($this->path, $json . PHP_EOL) === false) {
-            throw InvalidSession::unwritableFile($this->path);
-        }
     }
 
     /**

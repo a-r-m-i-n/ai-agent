@@ -12,6 +12,8 @@ use Armin\AiAgent\Exception\MissingModel;
 use Armin\AiAgent\Internal\Provider\TokenPlatformFactory;
 use Armin\AiAgent\Internal\Session\AgentSession;
 use Armin\AiAgent\Internal\Session\AgentSessionStore;
+use Armin\AiAgent\Internal\Session\AgentSessionResolver;
+use Armin\AiAgent\Internal\Session\ResolvedAgentSession;
 use Symfony\AI\Platform\Bridge\Anthropic\Factory as AnthropicFactory;
 use Symfony\AI\Platform\Bridge\Gemini\Factory as GeminiFactory;
 use Armin\AiAgent\Tool\ToolRegistry;
@@ -60,8 +62,8 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
         if ($attachments === []) {
             $attachments = $imageAttachmentResolver->detectFromDirectoryMentions($prompt);
         }
-        $sessionStore = $this->createSessionStore();
-        $session = $sessionStore?->load() ?? new AgentSession();
+        $resolvedSession = $this->resolveSession();
+        $session = $resolvedSession?->session() ?? new AgentSession();
         $loadedMessageCount = $session->count();
 
         if ($attachments !== [] && !$platform->getModelCatalog()->getModel($resolvedModel->model())->supports(Capability::INPUT_IMAGE)) {
@@ -100,17 +102,17 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
         $requestAssistantMessages = [];
         $response = null;
 
-        if ($sessionStore instanceof AgentSessionStore) {
+        if ($resolvedSession instanceof ResolvedAgentSession) {
             $session->appendUserMessage($prompt);
-            $this->persistSession($sessionStore, $session);
+            $this->persistSession($resolvedSession, $session);
         }
 
         for ($iteration = 0; ; ++$iteration) {
             $response = $this->callModel($platform, $resolvedModel->model(), $resolvedModel->qualifiedName(), $messageBag, $requestOptions);
 
-            if ($sessionStore instanceof AgentSessionStore && $response->toolCalls() !== []) {
+            if ($resolvedSession instanceof ResolvedAgentSession && $response->toolCalls() !== []) {
                 $session->appendAssistantMessage($response->content(), $response->toolCalls(), $response->metadata());
-                $this->persistSession($sessionStore, $session);
+                $this->persistSession($resolvedSession, $session);
             }
 
             if ($response->toolCalls() !== []) {
@@ -145,9 +147,9 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
             foreach ($assistantToolCalls as $toolCall) {
                 $toolResult = $this->executeToolCall($toolCall);
                 $messageBag->add(Message::ofToolCall($toolCall, $toolResult['message']));
-                if ($sessionStore instanceof AgentSessionStore) {
+                if ($resolvedSession instanceof ResolvedAgentSession) {
                     $session->appendToolMessage($toolResult['message'], $toolCall->getId());
-                    $this->persistSession($sessionStore, $session);
+                    $this->persistSession($resolvedSession, $session);
                 }
 
                 if ($toolResult['attachment'] instanceof LocalImageAttachment) {
@@ -209,16 +211,24 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
             $metadata['request_assistant_messages'] = $requestAssistantMessages;
         }
 
-        if ($sessionStore instanceof AgentSessionStore) {
+        if ($resolvedSession instanceof ResolvedAgentSession) {
             $session->appendAssistantMessage($response->content(), $response->toolCalls(), $metadata);
-            $this->persistSession($sessionStore, $session);
+            $this->persistSession($resolvedSession, $session);
 
-            $metadata['session'] = [
-                'file' => $sessionStore->path(),
+            $sessionMetadata = [
+                'mode' => $resolvedSession->mode(),
                 'loaded_messages' => $loadedMessageCount,
                 'replayed_messages' => $replayedMessageCount,
                 'stored_messages' => $session->count(),
             ];
+
+            if ($resolvedSession->isFileMode()) {
+                $sessionMetadata['file'] = $resolvedSession->store()?->path();
+            } else {
+                $sessionMetadata['content'] = (new AgentSessionStore('[inline session]'))->toJson($session);
+            }
+
+            $metadata['session'] = $sessionMetadata;
         }
 
         return new AiAgentResponse(
@@ -381,20 +391,16 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
         return $requestOptions;
     }
 
-    private function createSessionStore(): ?AgentSessionStore
+    private function resolveSession(): ?ResolvedAgentSession
     {
-        $sessionFile = $this->config->sessionFile();
-
-        if ($sessionFile === null) {
-            return null;
-        }
-
-        return new AgentSessionStore($sessionFile);
+        return (new AgentSessionResolver())->resolve($this->config->session());
     }
 
-    private function persistSession(AgentSessionStore $sessionStore, AgentSession $session): void
+    private function persistSession(ResolvedAgentSession $resolvedSession, AgentSession $session): void
     {
-        $sessionStore->save($session);
+        if ($resolvedSession->isFileMode()) {
+            $resolvedSession->store()?->save($session);
+        }
     }
 
     private function createMessageBagFromSession(AgentSession $session, string $systemPrompt): MessageBag

@@ -15,7 +15,8 @@ use Armin\AiAgent\Internal\ContextUsageFormatter;
 use Armin\AiAgent\Internal\DefaultSystemPromptBuilder;
 use Armin\AiAgent\Internal\ModelMetadata;
 use Armin\AiAgent\Internal\ModelMetadataRegistry;
-use Armin\AiAgent\Internal\Session\AgentSessionStore;
+use Armin\AiAgent\Internal\Session\AgentSessionResolver;
+use Armin\AiAgent\Internal\Session\ResolvedAgentSession;
 use Armin\AiAgent\Internal\TokenCostCalculator;
 use Armin\AiAgent\Tool\ToolRegistry;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -54,7 +55,7 @@ final class AiAgentRunCommand extends Command
             ->addOption('model', null, InputOption::VALUE_REQUIRED, 'The model to use.')
             ->addOption('key', null, InputOption::VALUE_REQUIRED, 'The API key to use.')
             ->addOption('auth-file', null, InputOption::VALUE_REQUIRED, 'Path to an auth.json file.')
-            ->addOption('session-file', null, InputOption::VALUE_REQUIRED, 'Path to a JSON file used to persist session history.')
+            ->addOption('session', null, InputOption::VALUE_REQUIRED, 'Session JSON file path or inline serialized session JSON. Existing readable files are loaded and persisted; other values are treated as inline session payload.')
             ->addOption('debug', null, InputOption::VALUE_REQUIRED, 'Debug mode: "system_prompt", "statistics", or "stats".');
     }
 
@@ -66,7 +67,7 @@ final class AiAgentRunCommand extends Command
         $modelOption = $input->getOption('model');
         $keyOption = $input->getOption('key');
         $authFileOption = $input->getOption('auth-file');
-        $sessionFileOption = $input->getOption('session-file');
+        $sessionOption = $input->getOption('session');
         $debugOption = $input->getOption('debug');
         $auth = is_string($authFileOption) && $authFileOption !== ''
             ? $this->authFileLoader->load($authFileOption)
@@ -78,7 +79,7 @@ final class AiAgentRunCommand extends Command
                 apiKey: $this->config->apiKey(),
                 model: $this->config->model(),
                 auth: $auth,
-                sessionFile: $this->config->sessionFile(),
+                session: $this->config->session(),
                 workingDirectory: $this->config->workingDirectory(),
                 systemPrompt: $this->config->systemPrompt(),
                 systemPromptMode: $this->config->systemPromptMode(),
@@ -92,8 +93,8 @@ final class AiAgentRunCommand extends Command
             $config->setApiKey($keyOption);
         }
 
-        if (is_string($sessionFileOption) && $sessionFileOption !== '') {
-            $config->setSessionFile($sessionFileOption);
+        if (is_string($sessionOption) && $sessionOption !== '') {
+            $config->setSession($sessionOption);
         }
 
         $effectiveConfig = $this->withDefaultWorkingDirectory($config);
@@ -109,7 +110,7 @@ final class AiAgentRunCommand extends Command
             $io->writeln('<fg=gray>Statistics:</>');
             $this->writeSessionDiagnostics(
                 $io,
-                $this->readSessionUsage($effectiveConfig->sessionFile()),
+                $this->readSessionUsage($effectiveConfig->session()),
                 $this->modelMetadataRegistry->find($effectiveConfig->model() ?? ''),
             );
 
@@ -117,7 +118,7 @@ final class AiAgentRunCommand extends Command
         }
 
         if ($debugMode === 'history') {
-            $this->writeSessionHistory($io, $this->loadRequiredSessionStore($effectiveConfig->sessionFile())->load()->messages());
+            $this->writeSessionHistory($io, $this->loadRequiredSession($effectiveConfig->session())->session()->messages());
 
             return Command::SUCCESS;
         }
@@ -212,7 +213,7 @@ final class AiAgentRunCommand extends Command
             apiKey: $config->apiKey(),
             model: $config->model(),
             auth: $config->auth(),
-            sessionFile: $config->sessionFile(),
+            session: $config->session(),
             workingDirectory: $workingDirectory,
             systemPrompt: $config->systemPrompt(),
             systemPromptMode: $config->systemPromptMode(),
@@ -408,18 +409,18 @@ final class AiAgentRunCommand extends Command
         return $rows;
     }
 
-    private function readSessionUsage(?string $sessionFile): AiAgentTokenUsage
+    private function readSessionUsage(?string $session): AiAgentTokenUsage
     {
-        if ($sessionFile === null || $sessionFile === '') {
+        if ($session === null || $session === '') {
             return new AiAgentTokenUsage();
         }
 
-        $store = new AgentSessionStore($sessionFile);
-        if (!$store->exists()) {
+        $resolvedSession = (new AgentSessionResolver())->resolve($session);
+        if ($resolvedSession === null) {
             return new AiAgentTokenUsage();
         }
 
-        return (new AiAgentTokenUsageExtractor())->fromSession($store->load());
+        return (new AiAgentTokenUsageExtractor())->fromSession($resolvedSession->session());
     }
 
     /**
@@ -530,21 +531,14 @@ final class AiAgentRunCommand extends Command
         return $step;
     }
 
-    private function loadRequiredSessionStore(?string $sessionFile): AgentSessionStore
+    private function loadRequiredSession(?string $session): ResolvedAgentSession
     {
-        if ($sessionFile === null || $sessionFile === '') {
-            throw new \InvalidArgumentException('Debug mode "history" requires --session-file.');
+        if ($session === null || $session === '') {
+            throw new \InvalidArgumentException('Debug mode "history" requires --session.');
         }
 
-        $store = new AgentSessionStore($sessionFile);
-        if (!$store->exists()) {
-            throw new \InvalidArgumentException(sprintf(
-                'Debug mode "history" requires an existing session file. File not found: %s',
-                $sessionFile,
-            ));
-        }
-
-        return $store;
+        return (new AgentSessionResolver())->resolve($session)
+            ?? throw new \InvalidArgumentException('Debug mode "history" requires --session.');
     }
 
     /**

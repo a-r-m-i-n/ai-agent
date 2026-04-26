@@ -25,7 +25,7 @@ CLI options:
 - `--model` overrides `AI_AGENT_DEFAULT_MODEL`
 - `--key` overrides `AI_AGENT_API_KEY`
 - `--auth-file` loads credentials from an `auth.json` file
-- `--session-file` persists and reloads conversation history from a JSON file
+- `--session` accepts either a reusable session JSON file path or inline serialized session JSON
 
 Internally, the CLI applies `--model` and `--key` by updating the `AiAgentConfig` instance before the request is executed.
 
@@ -44,7 +44,7 @@ Use Symfony verbosity flags for diagnostics:
 - in verbose mode, the sections are labeled as `System prompt:`, `User prompt:`, `Output:`, and `Statistics:`
 - the `total` row in the statistics table is highlighted
 
-The CLI mode is non-interactive. Use `--session-file` if you want multi-turn history between invocations.
+The CLI mode is non-interactive. Use `--session` if you want multi-turn history between invocations.
 
 ## Examples
 
@@ -57,8 +57,8 @@ vendor/bin/ai-agent "Summarize this repository" --model=openai:gpt-5.4-nano --au
 Example with a reusable session file:
 
 ```bash
-vendor/bin/ai-agent "Summarize this repository" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session-file=.ai-agent-session.json
-vendor/bin/ai-agent "Now answer in German" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session-file=.ai-agent-session.json
+vendor/bin/ai-agent "Summarize this repository" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session=.ai-agent-session.json
+vendor/bin/ai-agent "Now answer in German" --model=openai:gpt-5.4-mini --auth-file=./auth.json --session=.ai-agent-session.json
 ```
 
 Example with a prompt file:

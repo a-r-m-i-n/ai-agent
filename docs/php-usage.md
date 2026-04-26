@@ -42,7 +42,7 @@ use Armin\AiAgent\AiAgentClient;
 use Armin\AiAgent\AiAgentConfig;
 
 $client = new AiAgentClient(new AiAgentConfig(
-    sessionFile: __DIR__ . '/var/ai-agent-session.json',
+    session: __DIR__ . '/var/ai-agent-session.json',
     workingDirectory: __DIR__,
     systemPrompt: 'Prefer short explanations and always mention potential risks.',
     systemPromptMode: 'append', // or "replace"
@@ -61,7 +61,7 @@ $config = new AiAgentConfig();
 $config
     ->setModel('openai:gpt-5.4-mini')
     ->setApiKey('your-key')
-    ->setSessionFile(__DIR__ . '/var/ai-agent-session.json');
+    ->setSession(__DIR__ . '/var/ai-agent-session.json');
 
 $client = new AiAgentClient($config);
 ```
@@ -152,26 +152,26 @@ For image transformations, the runtime can attach local image files as real mult
 
 ## Sessions and Token Usage
 
-To continue a multi-turn exchange, reuse the same session file:
+To continue a multi-turn exchange, reuse the same session value:
 
 ```php
 <?php
 
 $client = new AiAgentClient(new AiAgentConfig(
-    sessionFile: __DIR__ . '/var/ai-agent-session.json',
+    session: __DIR__ . '/var/ai-agent-session.json',
 ));
 
 $client->request('Summarize this package.');
 $followUp = $client->request('Now give me the answer as three bullet points.');
 ```
 
-Session files are stored as JSON objects with a versioned format and a `messages` list. They keep the full archived turn data, including assistant metadata such as provider-specific response details.
+If `session` points to an existing readable file, the runtime loads and persists that file. Otherwise, the string is treated as inline serialized session JSON. The same versioned JSON format with a `messages` list is used in both modes.
 
 For follow-up requests, only the model-relevant conversation parts are replayed from that archive: message roles, text content, and assistant tool calls.
 
 Existing session history is loaded before each request, and the current user prompt plus the final assistant response are appended only after a successful request.
 
-Invalid or incompatible session files fail fast with a clear exception instead of silently starting with an empty history.
+This makes it possible to store session state outside the package, for example in a database, and pass the serialized JSON back through `session`.
 
 You can inspect token usage for the last successful request directly on the client. The returned `Armin\AiAgent\AiAgentTokenUsage` object keeps normal response usage and image-generation usage separate:
 
@@ -179,7 +179,7 @@ You can inspect token usage for the last successful request directly on the clie
 <?php
 
 $client = new AiAgentClient(new AiAgentConfig(
-    sessionFile: __DIR__ . '/var/ai-agent-session.json',
+    session: __DIR__ . '/var/ai-agent-session.json',
 ));
 
 $response = $client->request('Summarize this package.');
@@ -192,9 +192,9 @@ print_r($sessionTokens->toArray());
 
 `getRequestTokens()` reports the aggregated usage of the last successful `request()` call on the current `AiAgentClient` instance, including intermediate model steps caused by tool calls.
 
-`getSessionTokens()` loads the configured session file and aggregates all archived assistant responses from that file.
+`getSessionTokens()` loads the configured `session` source and aggregates all archived assistant responses from it.
 
-If no request has been executed yet, or no session file is configured or present, both methods return an empty usage object with all counters set to `0`.
+If no request has been executed yet, or no session is configured, both methods return an empty usage object with all counters set to `0`.
 
 The `AiAgentTokenUsage` payload contains these stable keys:
 

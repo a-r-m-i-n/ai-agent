@@ -95,13 +95,13 @@ final class AiAgentClientTest extends TestCase
     public function testConfigExposesWorkingDirectoryAndSystemPromptSettings(): void
     {
         $config = new AiAgentConfig(
-            sessionFile: $this->tempDirectory . '/session.json',
+            session: $this->tempDirectory . '/session.json',
             workingDirectory: $this->tempDirectory,
             systemPrompt: 'Answer tersely.',
             systemPromptMode: 'replace',
         );
 
-        self::assertSame($this->tempDirectory . '/session.json', $config->sessionFile());
+        self::assertSame($this->tempDirectory . '/session.json', $config->session());
         self::assertSame($this->tempDirectory, $config->workingDirectory());
         self::assertSame('Answer tersely.', $config->systemPrompt());
         self::assertSame('replace', $config->systemPromptMode());
@@ -1186,13 +1186,35 @@ final class AiAgentClientTest extends TestCase
         ], $client->getRequestTokens()->toArray());
     }
 
-    public function testGetSessionTokensReturnsZeroWhenSessionFileIsNotConfiguredOrMissing(): void
+    public function testGetSessionTokensReturnsZeroWhenSessionIsNotConfigured(): void
     {
         $withoutSession = new AiAgentClient();
-        $missingSession = new AiAgentClient(new AiAgentConfig(sessionFile: $this->tempDirectory . '/missing-session.json'));
 
         self::assertSame((new AiAgentTokenUsage())->toArray(), $withoutSession->getSessionTokens()->toArray());
-        self::assertSame((new AiAgentTokenUsage())->toArray(), $missingSession->getSessionTokens()->toArray());
+    }
+
+    public function testGetSessionTokensAggregatesAssistantMessagesFromInlineSession(): void
+    {
+        $payload = json_encode([
+            'version' => 1,
+            'messages' => [[
+                'role' => 'assistant',
+                'content' => 'inline',
+                'metadata' => [
+                    'final_response' => [
+                        'usage' => [
+                            'input_tokens' => 2,
+                            'output_tokens' => 3,
+                            'total_tokens' => 5,
+                        ],
+                    ],
+                ],
+            ]],
+        ], JSON_THROW_ON_ERROR);
+
+        $client = new AiAgentClient(new AiAgentConfig(session: $payload));
+
+        self::assertSame(5, $client->getSessionTokens()->total());
     }
 
     public function testGetSessionTokensAggregatesAssistantMessagesFromSessionFile(): void
@@ -1250,7 +1272,7 @@ final class AiAgentClientTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(session: $sessionFile));
 
         self::assertSame([
             'input' => 12,
@@ -1317,7 +1339,7 @@ final class AiAgentClientTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(session: $sessionFile));
 
         self::assertSame([
             'input' => 30,
@@ -1386,7 +1408,7 @@ final class AiAgentClientTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(session: $sessionFile));
 
         self::assertSame([
             'input' => 12,
@@ -1412,7 +1434,7 @@ final class AiAgentClientTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR));
 
-        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(session: $sessionFile));
 
         self::assertSame((new AiAgentTokenUsage())->toArray(), $client->getSessionTokens()->toArray());
     }
@@ -1422,7 +1444,7 @@ final class AiAgentClientTest extends TestCase
         $sessionFile = $this->tempDirectory . '/broken.json';
         file_put_contents($sessionFile, '{invalid');
 
-        $client = new AiAgentClient(new AiAgentConfig(sessionFile: $sessionFile));
+        $client = new AiAgentClient(new AiAgentConfig(session: $sessionFile));
 
         $this->expectException(InvalidSession::class);
 
@@ -1435,11 +1457,11 @@ final class AiAgentClientTest extends TestCase
         $config
             ->setModel('openai:gpt-5.1')
             ->setApiKey('secret')
-            ->setSessionFile($this->tempDirectory . '/session.json');
+            ->setSession($this->tempDirectory . '/session.json');
 
         self::assertSame('openai:gpt-5.1', $config->model());
         self::assertSame('secret', $config->apiKey());
-        self::assertSame($this->tempDirectory . '/session.json', $config->sessionFile());
+        self::assertSame($this->tempDirectory . '/session.json', $config->session());
     }
 
     public function testOpenAiTokenModeExecutesToolCallsThroughAgentLoop(): void

@@ -9,7 +9,7 @@ use Armin\AiAgent\Exception\ToolNotFound;
 use Armin\AiAgent\Internal\AiAgentRuntimeInterface;
 use Armin\AiAgent\Internal\AiAgentTokenUsageExtractor;
 use Armin\AiAgent\Internal\DefaultSystemPromptBuilder;
-use Armin\AiAgent\Internal\Session\AgentSessionStore;
+use Armin\AiAgent\Internal\Session\AgentSessionResolver;
 use Armin\AiAgent\Internal\SystemPromptBuilderInterface;
 use Armin\AiAgent\Internal\SymfonyAiAgentRuntime;
 use Armin\AiAgent\Tool\ToolInterface;
@@ -134,18 +134,17 @@ final class AiAgentClient
 
     public function getSessionTokens(): AiAgentTokenUsage
     {
-        $sessionFile = $this->config->sessionFile();
+        $session = $this->config->session();
 
-        if ($sessionFile === null) {
+        if ($session === null) {
             return new AiAgentTokenUsage();
         }
 
-        $store = new AgentSessionStore($sessionFile);
-
-        if (!$store->exists()) {
+        $resolvedSession = (new AgentSessionResolver())->resolve($session);
+        if ($resolvedSession === null) {
             return new AiAgentTokenUsage();
         }
 
-        return $this->tokenUsageExtractor->fromSession($store->load());
+        return $this->tokenUsageExtractor->fromSession($resolvedSession->session());
     }
 }

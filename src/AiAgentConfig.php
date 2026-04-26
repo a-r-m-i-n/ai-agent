@@ -15,7 +15,7 @@ final class AiAgentConfig
         private ?string $apiKey = null,
         private ?string $model = null,
         private ?AgentAuth $auth = null,
-        private ?string $sessionFile = null,
+        private ?string $session = null,
         private readonly ?string $workingDirectory = null,
         private readonly ?string $systemPrompt = null,
         private readonly string $systemPromptMode = 'append',
@@ -97,18 +97,18 @@ final class AiAgentConfig
         return $this;
     }
 
-    public function sessionFile(): ?string
+    public function session(): ?string
     {
-        if ($this->sessionFile === null || $this->sessionFile === '') {
+        if ($this->session === null || $this->session === '') {
             return null;
         }
 
-        return $this->sessionFile;
+        return $this->session;
     }
 
-    public function setSessionFile(?string $sessionFile): self
+    public function setSession(?string $session): self
     {
-        $this->sessionFile = $sessionFile;
+        $this->session = $session;
 
         return $this;
     }

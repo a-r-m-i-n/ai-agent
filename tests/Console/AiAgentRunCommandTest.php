@@ -112,7 +112,7 @@ final class AiAgentRunCommandTest extends TestCase
         putenv(AiAgentConfig::MODEL_ENV_VAR . '=openai:gpt-5');
         $sessionFile = sys_get_temp_dir() . '/ai-agent-session-' . bin2hex(random_bytes(4)) . '.json';
         $this->temporaryFiles[] = $sessionFile;
-        $config = new AiAgentConfig(sessionFile: $sessionFile);
+        $config = new AiAgentConfig(session: $sessionFile);
         file_put_contents($sessionFile, json_encode([
             'version' => 1,
             'messages' => [
@@ -288,7 +288,7 @@ final class AiAgentRunCommandTest extends TestCase
         $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
         $tester->execute([
             'prompt' => 'Say hello',
-            '--session-file' => $sessionFile,
+            '--session' => $sessionFile,
             '--model' => 'openai:gpt-5',
             '--debug' => 'stats',
         ], [
@@ -377,7 +377,7 @@ final class AiAgentRunCommandTest extends TestCase
         $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
         $tester->execute([
             'prompt' => 'Ignored prompt',
-            '--session-file' => $sessionFile,
+            '--session' => $sessionFile,
             '--debug' => 'history',
         ]);
 
@@ -408,7 +408,7 @@ final class AiAgentRunCommandTest extends TestCase
         $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Debug mode "history" requires --session-file.');
+        $this->expectExceptionMessage('Debug mode "history" requires --session.');
 
         $tester->execute([
             'prompt' => 'Say hello',
@@ -416,19 +416,40 @@ final class AiAgentRunCommandTest extends TestCase
         ]);
     }
 
-    public function testDebugHistoryRequiresExistingSessionFile(): void
+    public function testDebugHistoryRejectsInvalidInlineSession(): void
     {
-        $missingSessionFile = sys_get_temp_dir() . '/ai-agent-missing-session-' . bin2hex(random_bytes(4)) . '.json';
         $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Debug mode "history" requires an existing session file.');
+        $this->expectException(\Armin\AiAgent\Exception\InvalidSession::class);
 
         $tester->execute([
             'prompt' => 'Say hello',
-            '--session-file' => $missingSessionFile,
+            '--session' => '{invalid',
             '--debug' => 'history',
         ]);
+    }
+
+    public function testDebugHistorySupportsInlineSessionPayload(): void
+    {
+        $payload = json_encode([
+            'version' => 1,
+            'messages' => [
+                ['role' => 'user', 'content' => 'Inline prompt'],
+                ['role' => 'assistant', 'content' => 'Inline answer'],
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
+        $tester->execute([
+            'prompt' => 'Ignored prompt',
+            '--session' => $payload,
+            '--debug' => 'history',
+        ]);
+
+        $display = $tester->getDisplay();
+
+        self::assertStringContainsString('Inline prompt', $display);
+        self::assertStringContainsString('Inline answer', $display);
     }
 
     public function testDebugHistoryFallsBackToFinalResponseTextWhenAssistantContentIsEmpty(): void
@@ -467,7 +488,7 @@ final class AiAgentRunCommandTest extends TestCase
         $tester = new CommandTester(new AiAgentRunCommand(client: $this->createFailingClientStub()));
         $tester->execute([
             'prompt' => 'Ignored prompt',
-            '--session-file' => $sessionFile,
+            '--session' => $sessionFile,
             '--debug' => 'history',
         ]);
 
@@ -544,7 +565,7 @@ final class AiAgentRunCommandTest extends TestCase
                     model: 'openai:gpt-5.4',
                     metadata: [
                         'system_prompt' => 'System prompt',
-                        'session_file_seen' => $this->config->sessionFile(),
+                        'session_seen' => $this->config->session(),
                     ],
                 );
             }
@@ -558,12 +579,12 @@ final class AiAgentRunCommandTest extends TestCase
         $tester = new CommandTester(new AiAgentRunCommand(config: $config, client: $client));
         $tester->execute([
             'prompt' => 'Say hello',
-            '--session-file' => $sessionFile,
+            '--session' => $sessionFile,
         ], [
             'verbosity' => OutputInterface::VERBOSITY_VERBOSE,
         ]);
 
-        self::assertSame($sessionFile, $config->sessionFile());
+        self::assertSame($sessionFile, $config->session());
         self::assertStringContainsString('Hello from AI agent', $tester->getDisplay());
     }
 
