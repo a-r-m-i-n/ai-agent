@@ -32,6 +32,7 @@ use Symfony\AI\Platform\Result\ToolCall;
 final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
 {
     private const MAX_TOOL_ITERATIONS = 100;
+    private ?AiAgentResponse $lastResponse = null;
 
     public function __construct(
         private readonly AiAgentConfig $config,
@@ -212,6 +213,8 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
             }
         }
 
+        $response = $this->normalizeFinalAssistantResponseContent($response, $responseClass);
+
         if ($requestAssistantMessages !== []) {
             $metadata['request_assistant_messages'] = $requestAssistantMessages;
         }
@@ -236,7 +239,7 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
             $metadata['session'] = $sessionMetadata;
         }
 
-        return new AiAgentResponse(
+        return $this->lastResponse = new AiAgentResponse(
             $response->content(),
             $response->model(),
             $response->toolCalls(),
@@ -247,8 +250,14 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
     public function requestStructured(string $prompt, string $responseClass): object
     {
         $response = $this->request($prompt, $responseClass);
+        $payload = $this->resolveStructuredAssistantContent($response);
 
-        return (new Serializer())->deserialize($response->content(), $responseClass, 'json');
+        return (new Serializer())->deserialize($payload, $responseClass, 'json');
+    }
+
+    public function getLastResponse(): ?AiAgentResponse
+    {
+        return $this->lastResponse;
     }
 
     private function createPlatform(string $provider, ResolvedAuth $auth): PlatformInterface
@@ -262,6 +271,70 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
             'anthropic' => AnthropicFactory::createPlatform($auth->apiKey() ?? '', $this->httpClient),
             'gemini' => GeminiFactory::createPlatform($auth->apiKey() ?? '', $this->httpClient),
         };
+    }
+
+    private function extractStructuredPayloadFromResponseMetadata(AiAgentResponse $response): string
+    {
+        $finalResponse = $response->metadata()['final_response'] ?? null;
+        if (!is_array($finalResponse)) {
+            return '';
+        }
+
+        $output = $finalResponse['output'] ?? null;
+        if (!is_array($output)) {
+            return '';
+        }
+
+        foreach ($output as $item) {
+            if (!is_array($item) || ($item['type'] ?? null) !== 'message') {
+                continue;
+            }
+
+            $content = $item['content'] ?? null;
+            if (!is_array($content)) {
+                continue;
+            }
+
+            foreach ($content as $part) {
+                if (!is_array($part) || ($part['type'] ?? null) !== 'output_text' || !is_string($part['text'] ?? null)) {
+                    continue;
+                }
+
+                return $part['text'];
+            }
+        }
+
+        return '';
+    }
+
+    private function normalizeFinalAssistantResponseContent(AiAgentResponse $response, ?string $responseClass): AiAgentResponse
+    {
+        if ($responseClass === null) {
+            return $response;
+        }
+
+        $content = $this->resolveStructuredAssistantContent($response);
+
+        if ($content === $response->content()) {
+            return $response;
+        }
+
+        return new AiAgentResponse(
+            $content,
+            $response->model(),
+            $response->toolCalls(),
+            $response->metadata(),
+        );
+    }
+
+    private function resolveStructuredAssistantContent(AiAgentResponse $response): string
+    {
+        $content = $response->content();
+        if ($content !== '') {
+            return $content;
+        }
+
+        return $this->extractStructuredPayloadFromResponseMetadata($response);
     }
 
     /**

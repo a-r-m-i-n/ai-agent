@@ -67,7 +67,28 @@ final class OpenAiTokenResultConverter implements ResultConverterInterface
             return $streamResult;
         }
 
+        if ($this->looksLikeStreamBody($rawBody)) {
+            $streamEvents = $this->extractStreamEventsFromBody($rawBody);
+            $data = $this->extractFinalResponseFromStreamEvents($streamEvents);
+
+            return $this->convertNonStreamingStreamBody($streamEvents, $data);
+        }
+
         $data = $result->getData();
+
+        return $this->convertFinalResponseData($data);
+    }
+
+    public function getTokenUsageExtractor(): OpenAiTokenUsageExtractor
+    {
+        return new OpenAiTokenUsageExtractor();
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function convertFinalResponseData(array $data): ResultInterface
+    {
 
         if (isset($data['error']['code']) && 'content_filter' === $data['error']['code']) {
             throw new ContentFilterException($data['error']['message']);
@@ -83,15 +104,75 @@ final class OpenAiTokenResultConverter implements ResultConverterInterface
 
         $results = $this->convertOutputArray($data[self::KEY_OUTPUT]);
 
-        $convertedResult = 1 === \count($results) ? array_pop($results) : new ChoiceResult($results);
+        $convertedResult = match (\count($results)) {
+            0 => new TextResult(''),
+            1 => array_pop($results),
+            default => new ChoiceResult($results),
+        };
         $convertedResult->getMetadata()->add('final_response', $data);
 
         return $convertedResult;
     }
 
-    public function getTokenUsageExtractor(): \Symfony\AI\Platform\Bridge\OpenResponses\TokenUsageExtractor
+    private function looksLikeStreamBody(string $rawBody): bool
     {
-        return new \Symfony\AI\Platform\Bridge\OpenResponses\TokenUsageExtractor();
+        $trimmed = ltrim($rawBody);
+
+        return str_starts_with($trimmed, 'event:') || str_starts_with($trimmed, 'data:');
+    }
+
+    /**
+     * @param list<array<string, mixed>> $streamEvents
+     * @param array<string, mixed> $finalResponse
+     */
+    private function convertNonStreamingStreamBody(array $streamEvents, array $finalResponse): ResultInterface
+    {
+        $finalOutput = $finalResponse[self::KEY_OUTPUT] ?? null;
+        if (is_array($finalOutput) && $finalOutput !== []) {
+            return $this->convertFinalResponseData($finalResponse);
+        }
+
+        $deltaText = '';
+        $toolCalls = [];
+
+        foreach ($streamEvents as $event) {
+            $type = $event['type'] ?? '';
+
+            if ('error' === $type && isset($event['error'])) {
+                throw new RuntimeException($this->generateErrorMessage($event['error']));
+            }
+
+            if (str_contains($type, 'output_text') && isset($event['delta']) && is_string($event['delta'])) {
+                $deltaText .= $event['delta'];
+            }
+
+            if ('response.output_item.done' === $type) {
+                $toolCall = $this->convertStreamToolCall($event['item'] ?? null);
+
+                if ($toolCall !== null) {
+                    $toolCalls[$toolCall->getId()] = $toolCall;
+                }
+            }
+        }
+
+        if ($deltaText !== '' || $toolCalls !== []) {
+            $results = [];
+
+            if ($deltaText !== '') {
+                $results[] = new TextResult($deltaText);
+            }
+
+            if ($toolCalls !== []) {
+                $results[] = new ToolCallResult(array_values($toolCalls));
+            }
+
+            $convertedResult = 1 === \count($results) ? $results[0] : new ChoiceResult($results);
+            $convertedResult->getMetadata()->add('final_response', $finalResponse);
+
+            return $convertedResult;
+        }
+
+        return $this->convertFinalResponseData($finalResponse);
     }
 
     /**

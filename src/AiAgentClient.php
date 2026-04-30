@@ -89,9 +89,9 @@ final class AiAgentClient
         return $this->lastResponse = $this->runtime->request($prompt, $responseClass);
     }
 
-    public function requestText(string $prompt, ?string $responseClass = null): string
+    public function requestText(string $prompt): string
     {
-        return $this->request($prompt, $responseClass)->content();
+        return $this->request($prompt)->content();
     }
 
     /**
@@ -103,6 +103,18 @@ final class AiAgentClient
      */
     public function requestStructured(string $prompt, string $responseClass): object
     {
+        if (method_exists($this->runtime, 'getLastResponse')) {
+            $structured = $this->runtime->requestStructured($prompt, $responseClass);
+            $lastResponse = $this->runtime->getLastResponse();
+
+            if ($lastResponse instanceof AiAgentResponse) {
+                $this->lastResponse = $lastResponse;
+            }
+
+            /** @var TObject */
+            return $structured;
+        }
+
         /** @var TObject */
         return $this->runtime->requestStructured($prompt, $responseClass);
     }

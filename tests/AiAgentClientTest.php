@@ -928,25 +928,6 @@ final class AiAgentClientTest extends TestCase
         self::assertSame(ClientStructuredResponse::class, $runtime->capturedResponseClass);
     }
 
-    public function testRequestTextReturnsJsonStringWhenResponseClassIsProvided(): void
-    {
-        $runtime = new class implements AiAgentRuntimeInterface {
-            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
-            {
-                return new AiAgentResponse('{"message":"hello"}', 'openai:gpt-5');
-            }
-
-            public function requestStructured(string $prompt, string $responseClass): object
-            {
-                throw new \BadMethodCallException('not used');
-            }
-        };
-
-        $client = new AiAgentClient(runtime: $runtime);
-
-        self::assertSame('{"message":"hello"}', $client->requestText('Prompt', ClientStructuredResponse::class));
-    }
-
     public function testRequestStructuredReturnsDtoFromRuntime(): void
     {
         $runtime = new class implements AiAgentRuntimeInterface {
@@ -1057,6 +1038,60 @@ final class AiAgentClientTest extends TestCase
             'image_generation_total' => 0,
             'tool_calls' => 2,
             'tool_call_details' => ['read_file' => 2],
+        ], $client->getRequestTokens()->toArray());
+    }
+
+    public function testGetRequestTokensReturnsUsageAfterStructuredRequest(): void
+    {
+        $runtime = new class implements AiAgentRuntimeInterface {
+            private ?AiAgentResponse $lastResponse = null;
+
+            public function request(string $prompt, ?string $responseClass = null): AiAgentResponse
+            {
+                return $this->lastResponse = new AiAgentResponse(
+                    content: '{"message":"hello"}',
+                    model: 'openai:gpt-5',
+                    metadata: [
+                        'final_response' => [
+                            'usage' => [
+                                'input_tokens' => 11,
+                                'input_tokens_details' => ['cached_tokens' => 4],
+                                'output_tokens' => 5,
+                                'output_tokens_details' => ['reasoning_tokens' => 1],
+                                'total_tokens' => 16,
+                            ],
+                        ],
+                    ],
+                );
+            }
+
+            public function requestStructured(string $prompt, string $responseClass): object
+            {
+                $this->request($prompt, $responseClass);
+
+                return new ClientStructuredResponse('hello');
+            }
+
+            public function getLastResponse(): ?AiAgentResponse
+            {
+                return $this->lastResponse;
+            }
+        };
+
+        $client = new AiAgentClient(runtime: $runtime);
+        $client->requestStructured('Prompt', ClientStructuredResponse::class);
+
+        self::assertSame([
+            'input' => 11,
+            'cached_input' => 4,
+            'output' => 5,
+            'reasoning' => 1,
+            'total' => 16,
+            'image_generation_input' => 0,
+            'image_generation_output' => 0,
+            'image_generation_total' => 0,
+            'tool_calls' => 0,
+            'tool_call_details' => [],
         ], $client->getRequestTokens()->toArray());
     }
 

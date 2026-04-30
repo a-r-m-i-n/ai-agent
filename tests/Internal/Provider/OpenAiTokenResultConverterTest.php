@@ -8,6 +8,8 @@ use Armin\AiAgent\Internal\Provider\OpenAiResponsesStream;
 use Armin\AiAgent\Internal\Provider\OpenAiTokenResultConverter;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\BadRequestException;
+use Symfony\AI\Platform\Result\TextResult;
+use Symfony\AI\Platform\Result\ToolCallResult;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\StreamResult;
@@ -146,5 +148,95 @@ TEXT;
         $this->expectExceptionMessage('unsupported_parameter');
 
         $converter->convert($rawResult);
+    }
+
+    public function testNonStreamingConversionCanConsumeStreamBody(): void
+    {
+        $converter = new OpenAiTokenResultConverter();
+        $body = <<<TEXT
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"Hallo"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_123","output":[{"type":"message","content":[{"type":"output_text","text":"Hallo Welt"}]}],"usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6}}}
+
+TEXT;
+        $httpClient = new MockHttpClient([
+            new MockResponse($body, ['http_code' => 200]),
+        ]);
+        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiResponsesStream());
+
+        $result = $converter->convert($rawResult, ['stream' => false]);
+
+        self::assertInstanceOf(TextResult::class, $result);
+        self::assertSame('Hallo Welt', $result->getContent());
+        self::assertSame('resp_123', $result->getMetadata()->all()['final_response']['id']);
+    }
+
+    public function testNonStreamingConversionCanConsumeStreamBodyWithToolCalls(): void
+    {
+        $converter = new OpenAiTokenResultConverter();
+        $body = <<<TEXT
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_123","output":[{"id":"fc_123","type":"function_call","status":"completed","arguments":"{\"path\":\"composer.json\"}","call_id":"call_123","name":"read_file"}]}}
+
+TEXT;
+        $httpClient = new MockHttpClient([
+            new MockResponse($body, ['http_code' => 200]),
+        ]);
+        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiResponsesStream());
+
+        $result = $converter->convert($rawResult, ['stream' => false]);
+
+        self::assertInstanceOf(ToolCallResult::class, $result);
+        self::assertSame('call_123', $result->getContent()[0]->getId());
+        self::assertSame('read_file', $result->getContent()[0]->getName());
+        self::assertSame(['path' => 'composer.json'], $result->getContent()[0]->getArguments());
+    }
+
+    public function testNonStreamingConversionReturnsEmptyTextResultForEmptyOutput(): void
+    {
+        $converter = new OpenAiTokenResultConverter();
+        $body = <<<TEXT
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_123","output":[],"usage":{"input_tokens":4,"output_tokens":0,"total_tokens":4}}}
+
+TEXT;
+        $httpClient = new MockHttpClient([
+            new MockResponse($body, ['http_code' => 200]),
+        ]);
+        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiResponsesStream());
+
+        $result = $converter->convert($rawResult, ['stream' => false]);
+
+        self::assertInstanceOf(TextResult::class, $result);
+        self::assertSame('', $result->getContent());
+        self::assertSame('resp_123', $result->getMetadata()->all()['final_response']['id']);
+    }
+
+    public function testNonStreamingConversionUsesTextDeltasWhenFinalOutputIsEmpty(): void
+    {
+        $converter = new OpenAiTokenResultConverter();
+        $body = <<<TEXT
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"{\"suggestions\":"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"[]}"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_123","output":[],"usage":{"input_tokens":4,"output_tokens":3,"total_tokens":7}}}
+
+TEXT;
+        $httpClient = new MockHttpClient([
+            new MockResponse($body, ['http_code' => 200]),
+        ]);
+        $rawResult = new RawHttpResult($httpClient->request('POST', 'https://chatgpt.com/backend-api/codex/responses'), new OpenAiResponsesStream());
+
+        $result = $converter->convert($rawResult, ['stream' => false]);
+
+        self::assertInstanceOf(TextResult::class, $result);
+        self::assertSame('{"suggestions":[]}', $result->getContent());
+        self::assertSame('resp_123', $result->getMetadata()->all()['final_response']['id']);
     }
 }

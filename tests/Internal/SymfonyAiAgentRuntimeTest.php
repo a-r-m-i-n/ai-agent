@@ -302,6 +302,111 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertSame(2, $response->count);
     }
 
+    public function testRequestStructuredFallsBackToFinalResponseWhenContentIsEmpty(): void
+    {
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_STRUCTURED],
+            $holder,
+            metadata: [
+                'provider' => 'test',
+                'final_response' => [
+                    'id' => 'resp_123',
+                    'output' => [
+                        [
+                            'type' => 'message',
+                            'content' => [
+                                [
+                                    'type' => 'output_text',
+                                    'text' => '{"message":"hello","count":2}',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            results: [
+                new TextResult(''),
+            ],
+        );
+
+        $response = $runtime->requestStructured('Return JSON.', RuntimeStructuredResponse::class);
+
+        self::assertInstanceOf(RuntimeStructuredResponse::class, $response);
+        self::assertSame('hello', $response->message);
+        self::assertSame(2, $response->count);
+    }
+
+    public function testStructuredRequestPersistsRecoveredJsonPayloadInSessionContent(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_STRUCTURED],
+            $holder,
+            session: $sessionFile,
+            metadata: [
+                'provider' => 'test',
+                'final_response' => [
+                    'id' => 'resp_123',
+                    'output' => [
+                        [
+                            'type' => 'message',
+                            'content' => [
+                                [
+                                    'type' => 'output_text',
+                                    'text' => '{"message":"hello","count":2}',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            results: [
+                new TextResult(''),
+            ],
+        );
+
+        $response = $runtime->requestStructured('Return JSON.', RuntimeStructuredResponse::class);
+
+        self::assertSame('hello', $response->message);
+        $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('{"message":"hello","count":2}', $payload['messages'][2]['content']);
+        self::assertSame([
+            'id' => 'resp_123',
+            'output' => [
+                [
+                    'type' => 'message',
+                    'content' => [
+                        [
+                            'type' => 'output_text',
+                            'text' => '{"message":"hello","count":2}',
+                        ],
+                    ],
+                ],
+            ],
+        ], $payload['messages'][2]['metadata']['final_response']);
+    }
+
+    public function testStructuredRequestPreservesExistingJsonContentWhenPersistingSession(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        $holder = (object) ['inputs' => [], 'options' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE, Capability::OUTPUT_STRUCTURED],
+            $holder,
+            session: $sessionFile,
+            results: [
+                new TextResult('{"message":"hello","count":2}'),
+            ],
+        );
+
+        $runtime->requestStructured('Return JSON.', RuntimeStructuredResponse::class);
+
+        $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('{"message":"hello","count":2}', $payload['messages'][2]['content']);
+    }
+
     public function testStructuredRequestRejectsMissingResponseClass(): void
     {
         $holder = (object) ['inputs' => [], 'options' => []];
@@ -564,6 +669,33 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
             'final_response' => ['id' => 'resp_older'],
         ], $payload['messages'][1]['metadata']);
         self::assertArrayHasKey('metadata', $payload['messages'][3]);
+    }
+
+    public function testStructuredAssistantJsonIsReplayedFromSessionOnFollowUpRequest(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                ['role' => 'assistant', 'content' => '{"message":"hello","count":2}'],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $holder = (object) ['inputs' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            session: $sessionFile,
+        );
+
+        $runtime->request('Current prompt');
+
+        self::assertInstanceOf(MessageBag::class, $holder->inputs[0]);
+        $messages = $holder->inputs[0]->getMessages();
+        self::assertCount(3, $messages);
+        self::assertSame('system', $messages[0]->getRole()->value);
+        self::assertSame('{"message":"hello","count":2}', $messages[1]->getContent());
+        self::assertSame('Current prompt', $messages[2]->asText());
     }
 
     public function testLegacySessionWithoutToolOutputsRemainsReplayable(): void

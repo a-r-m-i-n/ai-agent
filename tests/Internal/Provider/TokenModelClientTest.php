@@ -28,7 +28,7 @@ final class TokenModelClientTest extends TestCase
         });
 
         $client = new OpenAiTokenModelClient($httpClient, 'token-123', 'account-456');
-        $client->request(new ResponsesModel('gpt-5', []), ['input' => []]);
+        $client->request(new ResponsesModel('gpt-5', []), ['input' => []], ['stream' => true]);
 
         self::assertInstanceOf(MockResponse::class, $capturedResponse);
         self::assertSame('https://chatgpt.com/backend-api/codex/responses', $capturedResponse->getRequestUrl());
@@ -63,6 +63,7 @@ final class TokenModelClientTest extends TestCase
 
         self::assertIsArray($capturedOptions);
         self::assertStringContainsString('"text":{"format":{"name":"TestDto","schema":{"type":"object","properties":{"message":{"type":"string"}}},"type":"json_schema"}}', $capturedOptions['body']);
+        self::assertStringContainsString('"stream":true', $capturedOptions['body']);
     }
 
     public function testAnthropicTokenClientUsesBearerHeader(): void
