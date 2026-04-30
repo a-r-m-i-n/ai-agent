@@ -75,11 +75,14 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
         $requestOptions = $this->buildRequestOptions($resolvedModel->provider(), $resolvedAuth, $platform, $resolvedModel->model(), $responseClass);
         $hostedTools = $this->resolveHostedTools($resolvedModel->provider());
         $requestOptions = $this->mergeHostedToolsIntoRequestOptions($resolvedModel->provider(), $requestOptions, $functionTools, $hostedTools);
-        $systemPrompt = ($this->systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry))->build([
+        $builtSystemPrompt = ($this->systemPromptBuilder ?? new DefaultSystemPromptBuilder($this->config, $this->toolRegistry))->build([
             'provider' => $resolvedModel->provider(),
             'model' => $resolvedModel->qualifiedName(),
             'hosted_tools' => $hostedTools,
         ]);
+        $systemPrompt = $resolvedSession instanceof ResolvedAgentSession
+            ? $session->ensureSystemPrompt($builtSystemPrompt)
+            : $builtSystemPrompt;
         $messageBag = $this->createMessageBagFromSession(
             $session,
             $systemPrompt,
@@ -103,6 +106,7 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
         $response = null;
 
         if ($resolvedSession instanceof ResolvedAgentSession) {
+            $this->persistSession($resolvedSession, $session);
             $session->appendUserMessage($prompt);
             $this->persistSession($resolvedSession, $session);
         }
@@ -406,9 +410,14 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
 
     private function createMessageBagFromSession(AgentSession $session, string $systemPrompt): MessageBag
     {
-        $messageBag = new MessageBag(Message::forSystem($systemPrompt));
+        $messageBag = new MessageBag();
 
         foreach ($session->replayMessages() as $messageIndex => $message) {
+            if ('system' === $message['role']) {
+                $messageBag->add(Message::forSystem($message['content']));
+                continue;
+            }
+
             if ('user' === $message['role']) {
                 $messageBag->add(Message::ofUser($message['content']));
                 continue;
@@ -434,6 +443,10 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
                     array_keys($message['tool_calls'] ?? []),
                 ),
             ));
+        }
+
+        if (\count($messageBag->getMessages()) === 0) {
+            $messageBag->add(Message::forSystem($systemPrompt));
         }
 
         return $messageBag;

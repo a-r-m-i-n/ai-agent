@@ -446,6 +446,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertInstanceOf(MessageBag::class, $holder->inputs[0]);
         $messages = $holder->inputs[0]->getMessages();
         self::assertCount(5, $messages);
+        self::assertSame('system', $messages[0]->getRole()->value);
         self::assertSame('Earlier user question', $messages[1]->asText());
         self::assertSame('Earlier assistant answer', $messages[2]->getContent());
         self::assertTrue($messages[2]->hasToolCalls());
@@ -455,7 +456,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertSame('file', $response->metadata()['session']['mode']);
         self::assertSame(3, $response->metadata()['session']['loaded_messages']);
         self::assertSame(3, $response->metadata()['session']['replayed_messages']);
-        self::assertSame(5, $response->metadata()['session']['stored_messages']);
+        self::assertSame(6, $response->metadata()['session']['stored_messages']);
     }
 
     public function testSuccessfulRequestCreatesOrUpdatesSessionFile(): void
@@ -477,14 +478,16 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
 
         self::assertSame(1, $payload['version']);
-        self::assertCount(2, $payload['messages']);
-        self::assertSame(['role' => 'user', 'content' => 'Persist this prompt'], $payload['messages'][0]);
-        self::assertSame('assistant', $payload['messages'][1]['role']);
-        self::assertSame('ok', $payload['messages'][1]['content']);
-        self::assertSame('test', $payload['messages'][1]['metadata']['provider']);
-        self::assertSame('openai:gpt-5.4-mini', $payload['messages'][1]['metadata']['model']);
-        self::assertSame(['id' => 'resp_1'], $payload['messages'][1]['metadata']['final_response']);
-        self::assertIsString($payload['messages'][1]['metadata']['system_prompt']);
+        self::assertCount(3, $payload['messages']);
+        self::assertSame('system', $payload['messages'][0]['role']);
+        self::assertIsString($payload['messages'][0]['content']);
+        self::assertSame(['role' => 'user', 'content' => 'Persist this prompt'], $payload['messages'][1]);
+        self::assertSame('assistant', $payload['messages'][2]['role']);
+        self::assertSame('ok', $payload['messages'][2]['content']);
+        self::assertSame('test', $payload['messages'][2]['metadata']['provider']);
+        self::assertSame('openai:gpt-5.4-mini', $payload['messages'][2]['metadata']['model']);
+        self::assertSame(['id' => 'resp_1'], $payload['messages'][2]['metadata']['final_response']);
+        self::assertArrayNotHasKey('system_prompt', $payload['messages'][2]['metadata']);
     }
 
     public function testInlineSessionIsUpdatedInResponseMetadataWithoutWritingAFile(): void
@@ -511,9 +514,10 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertIsString($response->metadata()['session']['content']);
 
         $payload = json_decode($response->metadata()['session']['content'], true, 512, JSON_THROW_ON_ERROR);
-        self::assertCount(4, $payload['messages']);
-        self::assertSame('Current prompt', $payload['messages'][2]['content']);
-        self::assertSame('ok', $payload['messages'][3]['content']);
+        self::assertCount(5, $payload['messages']);
+        self::assertSame('system', $payload['messages'][0]['role']);
+        self::assertSame('Current prompt', $payload['messages'][3]['content']);
+        self::assertSame('ok', $payload['messages'][4]['content']);
     }
 
     public function testSessionMetadataIsArchivedButNotUsedForReplay(): void
@@ -549,6 +553,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertInstanceOf(MessageBag::class, $holder->inputs[0]);
         $messages = $holder->inputs[0]->getMessages();
         self::assertCount(3, $messages);
+        self::assertSame('system', $messages[0]->getRole()->value);
         self::assertSame('Earlier assistant answer', $messages[1]->getContent());
         self::assertTrue($messages[1]->hasToolCalls());
         self::assertSame('Current prompt', $messages[2]->asText());
@@ -557,8 +562,8 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertSame([
             'provider' => 'openai',
             'final_response' => ['id' => 'resp_older'],
-        ], $payload['messages'][0]['metadata']);
-        self::assertArrayHasKey('metadata', $payload['messages'][2]);
+        ], $payload['messages'][1]['metadata']);
+        self::assertArrayHasKey('metadata', $payload['messages'][3]);
     }
 
     public function testLegacySessionWithoutToolOutputsRemainsReplayable(): void
@@ -588,6 +593,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
 
         $messages = $holder->inputs[0]->getMessages();
         self::assertCount(3, $messages);
+        self::assertSame('system', $messages[0]->getRole()->value);
         self::assertTrue($messages[1]->hasToolCalls());
         self::assertSame('Current prompt', $messages[2]->asText());
     }
@@ -664,6 +670,34 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         self::assertFalse($holder->options[0]['stream']);
         self::assertFalse($holder->options[1]['stream']);
         self::assertSame(6, $holder->inputs[1]->count());
+    }
+
+    public function testStoredSystemPromptIsReplayedFromSession(): void
+    {
+        $sessionFile = $this->tempDirectory . '/session.json';
+        file_put_contents($sessionFile, json_encode([
+            'version' => 1,
+            'messages' => [
+                ['role' => 'system', 'content' => 'Stored system prompt'],
+                ['role' => 'user', 'content' => 'Earlier prompt'],
+            ],
+        ], JSON_THROW_ON_ERROR));
+
+        $holder = (object) ['inputs' => []];
+        $runtime = $this->createRuntime(
+            [Capability::INPUT_MESSAGES, Capability::OUTPUT_TEXT, Capability::INPUT_IMAGE],
+            $holder,
+            session: $sessionFile,
+            configOverrides: [
+                'enableBuiltinWebSearch' => false,
+                'enableBuiltinImageGeneration' => false,
+            ],
+        );
+
+        $response = $runtime->request('Current prompt');
+
+        self::assertSame('Stored system prompt', $holder->inputs[0]->getMessages()[0]->getContent());
+        self::assertSame('Stored system prompt', $response->metadata()['system_prompt']);
     }
 
     public function testMultipleViewImageToolCallsReuseOriginalPromptForFollowUpMessage(): void
@@ -833,13 +867,13 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
 
         $runtime->request('Erzeuge ein Bild.');
         $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
-        $metadata = $payload['messages'][3]['metadata'];
+        $metadata = $payload['messages'][4]['metadata'];
 
         self::assertArrayNotHasKey('stream_events', $metadata);
         self::assertArrayNotHasKey('session', $metadata);
         self::assertSame('test', $metadata['provider']);
         self::assertSame('openai:gpt-5.4-mini', $metadata['model']);
-        self::assertStringContainsString('AI Code Assistant', $metadata['system_prompt']);
+        self::assertArrayNotHasKey('system_prompt', $metadata);
         self::assertSame([
             'id' => 'resp_1',
             'status' => 'completed',
@@ -889,7 +923,7 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
 
         $runtime->request('Persist output');
         $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
-        $metadata = $payload['messages'][1]['metadata'];
+        $metadata = $payload['messages'][2]['metadata'];
 
         self::assertSame([
             'usage' => ['total_tokens' => 12],
@@ -929,18 +963,19 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
         $runtime->request('Beschreibe image.png');
 
         $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
-        self::assertCount(4, $payload['messages']);
-        self::assertSame('user', $payload['messages'][0]['role']);
-        self::assertSame('assistant', $payload['messages'][1]['role']);
-        self::assertSame('tool', $payload['messages'][2]['role']);
-        self::assertSame('assistant', $payload['messages'][3]['role']);
-        self::assertArrayHasKey('tool_calls', $payload['messages'][1]);
-        self::assertSame('call-1', $payload['messages'][1]['tool_calls'][0]['id']);
-        self::assertSame('call-1', $payload['messages'][2]['tool_call_id']);
+        self::assertCount(5, $payload['messages']);
+        self::assertSame('system', $payload['messages'][0]['role']);
+        self::assertSame('user', $payload['messages'][1]['role']);
+        self::assertSame('assistant', $payload['messages'][2]['role']);
+        self::assertSame('tool', $payload['messages'][3]['role']);
+        self::assertSame('assistant', $payload['messages'][4]['role']);
+        self::assertArrayHasKey('tool_calls', $payload['messages'][2]);
+        self::assertSame('call-1', $payload['messages'][2]['tool_calls'][0]['id']);
+        self::assertSame('call-1', $payload['messages'][3]['tool_call_id']);
         self::assertSame([
             'path' => $path,
             'mime_type' => 'image/png',
-        ], $payload['messages'][3]['metadata']['attached_images'][0]);
+        ], $payload['messages'][4]['metadata']['attached_images'][0]);
         self::assertStringNotContainsString('base64', json_encode($payload, JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('data:image', json_encode($payload, JSON_THROW_ON_ERROR));
     }
@@ -976,12 +1011,13 @@ final class SymfonyAiAgentRuntimeTest extends TestCase
             $payload = json_decode((string) file_get_contents($sessionFile), true, 512, JSON_THROW_ON_ERROR);
 
             self::assertSame(1, $payload['version']);
-            self::assertCount(3, $payload['messages']);
-            self::assertSame(['role' => 'user', 'content' => 'Analysiere das Bild.'], $payload['messages'][0]);
-            self::assertSame('assistant', $payload['messages'][1]['role']);
-            self::assertSame('call-1', $payload['messages'][1]['tool_calls'][0]['id']);
-            self::assertSame('tool', $payload['messages'][2]['role']);
-            self::assertSame('call-1', $payload['messages'][2]['tool_call_id']);
+            self::assertCount(4, $payload['messages']);
+            self::assertSame('system', $payload['messages'][0]['role']);
+            self::assertSame(['role' => 'user', 'content' => 'Analysiere das Bild.'], $payload['messages'][1]);
+            self::assertSame('assistant', $payload['messages'][2]['role']);
+            self::assertSame('call-1', $payload['messages'][2]['tool_calls'][0]['id']);
+            self::assertSame('tool', $payload['messages'][3]['role']);
+            self::assertSame('call-1', $payload['messages'][3]['tool_call_id']);
         }
     }
 

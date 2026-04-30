@@ -70,7 +70,6 @@ final class AgentSessionStoreTest extends TestCase
         $session->appendAssistantMessage('done', metadata: [
             'provider' => 'openai',
             'model' => 'openai:gpt-5.4-mini',
-            'system_prompt' => 'System prompt',
             'attached_images' => [[
                 'path' => '/tmp/in/reference.png',
                 'filename' => 'reference.png',
@@ -93,7 +92,6 @@ final class AgentSessionStoreTest extends TestCase
 
         self::assertSame('openai', $metadata['provider']);
         self::assertSame('openai:gpt-5.4-mini', $metadata['model']);
-        self::assertSame('System prompt', $metadata['system_prompt']);
         self::assertSame([
             'path' => '/tmp/in/reference.png',
             'filename' => 'reference.png',
@@ -106,5 +104,20 @@ final class AgentSessionStoreTest extends TestCase
             'usage' => ['total_tokens' => 12],
             'output' => [['type' => 'message']],
         ], $metadata['final_response']);
+    }
+
+    public function testSaveAndLoadSupportSystemMessages(): void
+    {
+        $store = new AgentSessionStore($this->tempDirectory . '/session.json');
+        $session = new AgentSession([
+            ['role' => 'system', 'content' => 'Stored system prompt'],
+            ['role' => 'user', 'content' => 'Prompt'],
+        ]);
+
+        $store->save($session);
+        $loaded = $store->load();
+
+        self::assertSame('Stored system prompt', $loaded->messages()[0]['content']);
+        self::assertSame('system', $loaded->messages()[0]['role']);
     }
 }

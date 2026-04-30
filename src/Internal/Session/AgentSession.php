@@ -8,7 +8,7 @@ final class AgentSession
 {
     /**
      * @param list<array{
-     *     role: 'user'|'assistant'|'tool',
+     *     role: 'system'|'user'|'assistant'|'tool',
      *     content: string,
      *     tool_calls?: list<array{id?: string, name: string, arguments: array<string, mixed>}>,
      *     tool_call_id?: string,
@@ -22,7 +22,7 @@ final class AgentSession
 
     /**
      * @return list<array{
-     *     role: 'user'|'assistant'|'tool',
+     *     role: 'system'|'user'|'assistant'|'tool',
      *     content: string,
      *     tool_calls?: list<array{id?: string, name: string, arguments: array<string, mixed>}>,
      *     tool_call_id?: string,
@@ -36,7 +36,7 @@ final class AgentSession
 
     /**
      * @return list<array{
-     *     role: 'user'|'assistant'|'tool',
+     *     role: 'system'|'user'|'assistant'|'tool',
      *     content: string,
      *     tool_calls?: list<array{id?: string, name: string, arguments: array<string, mixed>}>,
      *     tool_call_id?: string
@@ -69,6 +69,32 @@ final class AgentSession
     public function count(): int
     {
         return \count($this->messages);
+    }
+
+    public function firstSystemPrompt(): ?string
+    {
+        foreach ($this->messages as $message) {
+            if (($message['role'] ?? null) === 'system' && is_string($message['content'] ?? null) && $message['content'] !== '') {
+                return $message['content'];
+            }
+        }
+
+        return null;
+    }
+
+    public function ensureSystemPrompt(string $content): string
+    {
+        $existingPrompt = $this->firstSystemPrompt();
+        if ($existingPrompt !== null) {
+            return $existingPrompt;
+        }
+
+        array_unshift($this->messages, [
+            'role' => 'system',
+            'content' => $content,
+        ]);
+
+        return $content;
     }
 
     public function appendUserMessage(string $content): void

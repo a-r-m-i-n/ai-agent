@@ -98,7 +98,7 @@ final class AgentSessionStore
             }
 
             $role = $message['role'] ?? null;
-            if (!is_string($role) || !in_array($role, ['user', 'assistant', 'tool'], true)) {
+            if (!is_string($role) || !in_array($role, ['system', 'user', 'assistant', 'tool'], true)) {
                 throw InvalidSession::invalidFileStructure(sprintf('Message at index %d has an unsupported "role".', $index));
             }
 
@@ -158,7 +158,7 @@ final class AgentSessionStore
 
     /**
      * @param list<array{
-     *     role: 'user'|'assistant'|'tool',
+     *     role: 'system'|'user'|'assistant'|'tool',
      *     content: string,
      *     tool_calls?: list<array{id?: string, name: string, arguments: array<string, mixed>}>,
      *     tool_call_id?: string,
@@ -206,7 +206,7 @@ final class AgentSessionStore
     {
         $sanitized = [];
 
-        foreach (['provider', 'model', 'system_prompt'] as $field) {
+        foreach (['provider', 'model'] as $field) {
             if (isset($metadata[$field]) && is_string($metadata[$field])) {
                 $sanitized[$field] = $metadata[$field];
             }
