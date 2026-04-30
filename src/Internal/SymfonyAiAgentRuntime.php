@@ -177,6 +177,7 @@ final class SymfonyAiAgentRuntime implements AiAgentRuntimeInterface
 
         $metadata = $response->metadata();
         $metadata['system_prompt'] = $systemPrompt;
+        $metadata['model'] = $resolvedModel->qualifiedName();
         $metadata['hosted_tools'] = $hostedTools;
         $generatedImagesMetadata = (new HostedImageGenerationPersister($this->config->workingDirectory()))
             ->persist($resolvedModel->provider(), $resolvedModel->model(), $prompt, $metadata, $attachedImagesMetadata);

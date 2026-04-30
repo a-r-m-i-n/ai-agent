@@ -206,6 +206,12 @@ final class AgentSessionStore
     {
         $sanitized = [];
 
+        foreach (['provider', 'model', 'system_prompt'] as $field) {
+            if (isset($metadata[$field]) && is_string($metadata[$field])) {
+                $sanitized[$field] = $metadata[$field];
+            }
+        }
+
         if (is_array($metadata['final_response'] ?? null)) {
             $usage = $this->sanitizeFinalResponse($metadata['final_response']);
 
@@ -224,6 +230,11 @@ final class AgentSessionStore
             $sanitized['request_assistant_messages'] = $requestAssistantMessages;
         }
 
+        $attachedImages = $this->sanitizeAttachedImages($metadata['attached_images'] ?? null);
+        if ($attachedImages !== []) {
+            $sanitized['attached_images'] = $attachedImages;
+        }
+
         return $sanitized;
     }
 
@@ -234,6 +245,17 @@ final class AgentSessionStore
     private function sanitizeFinalResponse(array $finalResponse): array
     {
         $sanitized = [];
+
+        foreach (['id', 'status'] as $field) {
+            if (isset($finalResponse[$field]) && is_string($finalResponse[$field])) {
+                $sanitized[$field] = $finalResponse[$field];
+            }
+        }
+
+        if (isset($finalResponse['created_at']) && (is_int($finalResponse['created_at']) || is_string($finalResponse['created_at']))) {
+            $sanitized['created_at'] = $finalResponse['created_at'];
+        }
+
         $usage = $finalResponse['usage'] ?? null;
 
         if (is_array($usage)) {
@@ -246,6 +268,39 @@ final class AgentSessionStore
         }
 
         return $sanitized;
+    }
+
+    /**
+     * @param mixed $attachedImages
+     * @return list<array<string, mixed>>
+     */
+    private function sanitizeAttachedImages(mixed $attachedImages): array
+    {
+        if (!is_array($attachedImages)) {
+            return [];
+        }
+
+        $sanitizedImages = [];
+
+        foreach ($attachedImages as $attachedImage) {
+            if (!is_array($attachedImage)) {
+                continue;
+            }
+
+            $sanitizedImage = [];
+
+            foreach (['path', 'filename', 'mime_type'] as $field) {
+                if (isset($attachedImage[$field]) && is_string($attachedImage[$field])) {
+                    $sanitizedImage[$field] = $attachedImage[$field];
+                }
+            }
+
+            if ($sanitizedImage !== []) {
+                $sanitizedImages[] = $sanitizedImage;
+            }
+        }
+
+        return $sanitizedImages;
     }
 
     /**

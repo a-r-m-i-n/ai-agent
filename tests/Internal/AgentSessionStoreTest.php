@@ -62,4 +62,49 @@ final class AgentSessionStoreTest extends TestCase
         self::assertSame(123, $loaded['messages'][0]['metadata']['generated_images'][0]['size']);
         self::assertSame('painted cat', $loaded['messages'][0]['metadata']['generated_images'][0]['revised_prompt']);
     }
+
+    public function testSavePersistsImportantAssistantMetadataFields(): void
+    {
+        $store = new AgentSessionStore($this->tempDirectory . '/session.json');
+        $session = new AgentSession();
+        $session->appendAssistantMessage('done', metadata: [
+            'provider' => 'openai',
+            'model' => 'openai:gpt-5.4-mini',
+            'system_prompt' => 'System prompt',
+            'attached_images' => [[
+                'path' => '/tmp/in/reference.png',
+                'filename' => 'reference.png',
+                'mime_type' => 'image/png',
+                'base64' => 'ignored',
+            ]],
+            'final_response' => [
+                'id' => 'resp_123',
+                'status' => 'completed',
+                'created_at' => 1234567890,
+                'usage' => ['total_tokens' => 12],
+                'output' => [['type' => 'message']],
+                'object' => 'response',
+            ],
+        ]);
+
+        $store->save($session);
+        $loaded = json_decode((string) file_get_contents($store->path()), true, 512, JSON_THROW_ON_ERROR);
+        $metadata = $loaded['messages'][0]['metadata'];
+
+        self::assertSame('openai', $metadata['provider']);
+        self::assertSame('openai:gpt-5.4-mini', $metadata['model']);
+        self::assertSame('System prompt', $metadata['system_prompt']);
+        self::assertSame([
+            'path' => '/tmp/in/reference.png',
+            'filename' => 'reference.png',
+            'mime_type' => 'image/png',
+        ], $metadata['attached_images'][0]);
+        self::assertSame([
+            'id' => 'resp_123',
+            'status' => 'completed',
+            'created_at' => 1234567890,
+            'usage' => ['total_tokens' => 12],
+            'output' => [['type' => 'message']],
+        ], $metadata['final_response']);
+    }
 }
